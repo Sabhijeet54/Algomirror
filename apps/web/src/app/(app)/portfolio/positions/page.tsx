@@ -84,7 +84,7 @@ export default function PositionsPage() {
             <Card>
               <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-6">
                 <div>
-                  <p className="text-xs text-muted-foreground">Today&apos;s P&amp;L (all strategy trades)</p>
+                  <p className="text-xs text-muted-foreground">Strategy P&amp;L today (booked in software — incl. trades not executed in demat)</p>
                   <p className="text-2xl font-semibold">
                     <Pnl value={p?.todayPnl ?? 0} />
                   </p>

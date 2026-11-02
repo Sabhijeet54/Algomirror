@@ -13,7 +13,16 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { formatDateTime } from '@/lib/format';
 import { useAdminUserMutations, useMe } from '@/lib/queries';
-import { type StaffScope, type UserStrategyRow, useAdminUserStrategies, useAdminUserStrategyMutations, useMasterLicenceMutations, useMasterLicenceQuota } from '@/lib/trading';
+import {
+  type LicenceHistoryItem,
+  type StaffScope,
+  type UserStrategyRow,
+  useAdminUserStrategies,
+  useAdminUserStrategyMutations,
+  useLicenceHistory,
+  useMasterLicenceMutations,
+  useMasterLicenceQuota,
+} from '@/lib/trading';
 import { cn } from '@/lib/utils';
 import { toastResized } from '@/lib/resize-toast';
 
@@ -200,6 +209,34 @@ export function EditUserDialog({ user, onClose }: { user: AdminUserListItem | nu
   );
 }
 
+const KIND_LABEL: Record<LicenceHistoryItem['kind'], string> = { ASSIGNED: 'Assigned', EXTENDED: 'Extended', REVOKED: 'Revoked', CREATED: 'Given at sign-up' };
+
+/** Licence history list (newest first). Used in the Assign licence dialog and on the client dashboard. */
+export function LicenceHistoryList({ rows, loading }: { rows: LicenceHistoryItem[] | undefined; loading?: boolean }) {
+  if (loading) return <p className="text-xs text-muted-foreground">Loading history…</p>;
+  if (!rows?.length) return <p className="text-xs text-muted-foreground">No licence history yet.</p>;
+  return (
+    <ul className="grid max-h-56 gap-1.5 overflow-y-auto pr-1 text-xs">
+      {rows.map((h, i) => (
+        <li key={`${h.at}-${i}`} className="rounded-md border px-2.5 py-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className={cn('font-semibold', h.kind === 'REVOKED' && 'text-destructive')}>
+              {KIND_LABEL[h.kind]}
+              {h.days ? ` · ${h.days} day${h.days === 1 ? '' : 's'}` : ''}
+              {h.demo ? ' · demo' : ''}
+            </span>
+            <span className="text-muted-foreground">{formatDateTime(h.at)}</span>
+          </div>
+          <div className="text-muted-foreground">
+            {h.kind === 'REVOKED' ? 'Stopped immediately' : h.expiresAt ? `Valid till ${formatDateTime(h.expiresAt)}` : ''}
+            {h.by ? ` · by ${h.by.name} (${h.by.role.toLowerCase().replace('_', ' ')})` : ''}
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function LicenceDialog({ user, onClose, scope = 'admin' }: { user: (Pick<AdminUserListItem, 'id' | 'name' | 'mobile' | 'licenceDays' | 'licenceExpiresAt'> & { demo?: boolean; role?: string }) | null; onClose: () => void; scope?: StaffScope }) {
   const adminM = useAdminUserMutations();
   const masterM = useMasterLicenceMutations();
@@ -208,7 +245,10 @@ export function LicenceDialog({ user, onClose, scope = 'admin' }: { user: (Pick<
   const [plan, setPlan] = useState('30');
   const [custom, setCustom] = useState('');
   const [extend, setExtend] = useState(true);
+  const [confirmRevoke, setConfirmRevoke] = useState(false);
+  const history = useLicenceHistory(scope, user?.id ?? null);
   useEffect(() => {
+    setConfirmRevoke(false);
     if (user) {
       if (user.demo) { setPlan('demo'); setCustom(String(user.licenceDays ?? 7)); }
       else if (user.licenceDays === 2 || user.licenceDays === 30) { setPlan(String(user.licenceDays)); setCustom(''); }
@@ -220,7 +260,7 @@ export function LicenceDialog({ user, onClose, scope = 'admin' }: { user: (Pick<
   const running = user?.licenceExpiresAt && new Date(user.licenceExpiresAt).getTime() > Date.now();
   return (
     <Dialog open={!!user} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-h-[90dvh] max-w-sm overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Assign licence</DialogTitle>
           <DialogDescription>
@@ -233,6 +273,7 @@ export function LicenceDialog({ user, onClose, scope = 'admin' }: { user: (Pick<
           <LicencePicker id="lic-plan" plan={plan} custom={custom} onPlan={setPlan} onCustom={setCustom} allowDemo={user?.role !== 'MASTER'} allowCustom={scope === 'admin' || !!quota.data?.customAllowed} />
           {scope === 'master' && quota.data ? <p className="text-xs text-muted-foreground">Licences left in your limit: <strong>{quota.data.remaining}</strong> (demo is free)</p> : null}
           {plan === 'demo' ? <p className="text-xs text-muted-foreground">Demo: the client can only paper trade — switching to live is blocked.</p> : null}
+          <p className="text-xs text-muted-foreground">The licence runs till 11:59 pm IST on its last day.</p>
         </F>
         {running ? (
           <label className="flex items-center gap-2 text-sm">
@@ -242,16 +283,18 @@ export function LicenceDialog({ user, onClose, scope = 'admin' }: { user: (Pick<
         ) : null}
         <DialogFooter className="gap-2">
           {running ? (
+            // Two clicks: a stray click on Revoke used to end the licence at once.
             <Button
-              variant="ghost"
-              className="text-destructive"
+              variant={confirmRevoke ? 'destructive' : 'ghost'}
+              className={confirmRevoke ? undefined : 'text-destructive'}
               disabled={revoke.isPending}
-              onClick={() =>
-                user &&
-                revoke.mutate(user.id, { onSuccess: () => (toast.success('Licence revoked — copy trading stopped'), onClose()), onError: (e) => toast.error(e.message) })
-              }
+              onClick={() => {
+                if (!user) return;
+                if (!confirmRevoke) return setConfirmRevoke(true);
+                revoke.mutate(user.id, { onSuccess: () => (toast.success('Licence revoked — copy trading stopped'), onClose()), onError: (e) => toast.error(e.message) });
+              }}
             >
-              Revoke
+              {confirmRevoke ? 'Yes, revoke now' : 'Revoke'}
             </Button>
           ) : null}
           <Button
@@ -267,6 +310,11 @@ export function LicenceDialog({ user, onClose, scope = 'admin' }: { user: (Pick<
             {licence.isPending ? 'Saving…' : 'Assign licence'}
           </Button>
         </DialogFooter>
+        {confirmRevoke ? <p className="text-xs text-destructive">Revoking ends the licence right now and stops copy trading. Click “Yes, revoke now” to confirm.</p> : null}
+        <div className="grid gap-1.5 border-t pt-3">
+          <p className="text-sm font-medium">Licence history</p>
+          <LicenceHistoryList rows={history.data} loading={history.isLoading} />
+        </div>
       </DialogContent>
     </Dialog>
   );

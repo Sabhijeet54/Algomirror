@@ -30,6 +30,7 @@ import { allocationLabel, ClientSummaryService, isRemoved } from './client-summa
 import { licenceStatus } from '../common/mappers';
 import { overlayLivePrices, paperPositionView } from './price-overlay';
 import { TradingService } from './trading.service';
+import { licenceExpiry, licenceHistory } from '../common/licence';
 
 /** Everything a master trader needs: strategies, followers, live account data and trade placement. */
 @Roles('MASTER')
@@ -244,12 +245,20 @@ export class MasterController {
     const now = new Date();
     const running = u.licenceExpiresAt && u.licenceExpiresAt > now;
     const extend = dto.extend !== false && running;
-    const expires = new Date((extend ? u.licenceExpiresAt!.getTime() : now.getTime()) + dto.days * 86_400_000);
+    // Runs to the end of the last day (IST) — never stops in the middle of a trading day.
+    const expires = licenceExpiry(extend ? u.licenceExpiresAt! : now, dto.days);
     await this.prisma.user.update({ where: { id: userId }, data: { licenceDays: (extend ? (u.licenceDays ?? 0) : 0) + dto.days, licenceAssignedAt: now, licenceExpiresAt: expires, demo: !!dto.demo } });
     if (dto.demo) await this.prisma.brokerAccount.updateMany({ where: { userId, mode: 'TRADING' }, data: { isPaper: true } });
     await this.audit.log({ action: 'PROFILE_UPDATED', actorUserId: user.actorId ?? user.id, targetType: 'User', targetId: userId, metadata: { licenceDays: dto.days, demo: !!dto.demo, extend: !!extend, expiresAt: expires.toISOString(), byMaster: true }, client: clientInfo(req) });
     this.accountEvents.emit({ type: 'settings', brokerAccountId: '', userId });
     return { licenceExpiresAt: expires.toISOString() };
+  }
+
+  /** Licence history of one of my clients, newest first. */
+  @Get('clients/:userId/licence-history')
+  async clientLicenceHistory(@CurrentUser() user: RequestUser, @Param('userId') userId: string) {
+    await this.myClient(user, userId);
+    return licenceHistory(this.prisma, userId);
   }
 
   @HttpCode(HttpStatus.OK)
@@ -298,10 +307,10 @@ export class MasterController {
         demo: !!dto.demo,
         passwordHash: await hashPassword(dto.password),
         emailVerifiedAt: now,
-        ...(dto.licenceDays ? { licenceDays: dto.licenceDays, licenceAssignedAt: now, licenceExpiresAt: new Date(now.getTime() + dto.licenceDays * 86_400_000) } : {}),
+        ...(dto.licenceDays ? { licenceDays: dto.licenceDays, licenceAssignedAt: now, licenceExpiresAt: licenceExpiry(now, dto.licenceDays) } : {}),
       },
     });
-    await this.audit.log({ action: 'PROFILE_UPDATED', actorUserId: user.actorId ?? user.id, targetType: 'User', targetId: u.id, metadata: { createdByMaster: true, licenceDays: dto.licenceDays ?? null }, client: clientInfo(req) });
+    await this.audit.log({ action: 'PROFILE_UPDATED', actorUserId: user.actorId ?? user.id, targetType: 'User', targetId: u.id, metadata: { createdByMaster: true, licenceDays: dto.licenceDays ?? null, demo: !!dto.demo, ...(dto.licenceDays ? { expiresAt: u.licenceExpiresAt?.toISOString() } : {}) }, client: clientInfo(req) });
     return { id: u.id, name: u.name, email: u.email };
   }
 

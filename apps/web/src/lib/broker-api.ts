@@ -61,7 +61,10 @@ export function useBrokerApiMutations(b: BrokerSlug) {
 }
 
 export interface ClientDashboard {
+  /** Software P&L — every strategy trade, also rejected / not in demat. */
   todayPnl: number;
+  /** Actually executed P&L (demat / paper fills). */
+  brokerPnl?: number;
   /** PAPER when no demat is connected. */
   tradingMode?: 'PAPER' | 'LIVE';
   broker: {
@@ -85,6 +88,8 @@ export interface ClientDashboard {
     allocation: string;
     todayPnl: number;
     todayTrades: number;
+    todayQty?: number;
+    brokerPnl?: number;
   }[];
 }
 

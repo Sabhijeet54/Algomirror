@@ -12,6 +12,9 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ClipboardList,
+  FileText,
+  Moon,
+  Sun,
   Copy,
   KeyRound,
   Layers,
@@ -91,12 +94,14 @@ const MENUS: Partial<Record<Role, NavSection[]>> = {
         { href: '/portfolio/marketplace', label: 'Marketplace', icon: Store },
         { href: '/portfolio', label: 'My strategies', icon: Copy, exact: true },
         { href: '/portfolio/positions', label: 'Portfolio', icon: Briefcase, also: ['/portfolio/holdings', '/portfolio/orders'] },
+        { href: '/signals', label: 'Signals', icon: Activity },
       ],
     },
     {
       title: 'Configuration',
       items: [
         { href: '/broker-api', label: 'Broker API', icon: KeyRound },
+        { href: '/api-log', label: 'API log', icon: FileText },
         { href: '/broker', label: 'Broker connection', icon: Building2 },
         { href: '/activity', label: 'Activity log', icon: History },
         { href: '/settings', label: 'Account settings', icon: Settings },
@@ -341,6 +346,7 @@ export function AppShell({ user, children }: { user: AuthUser; children: React.R
               <Dot tone={status.socket ? 'ok' : 'warn'} />
               <span className="font-semibold tracking-wide">{status.socket ? 'LIVE' : 'OFFLINE'}</span>
             </span>
+            <ThemeToggle />
             <div className="relative">
               <button
                 type="button"
@@ -384,5 +390,32 @@ export function AppShell({ user, children }: { user: AuthUser; children: React.R
       </div>
     </div>
     </div>
+  );
+}
+
+/** Light / dark theme switch (saved per browser; light by default). */
+function ThemeToggle() {
+  const [dark, setDark] = useState(false);
+  useEffect(() => setDark(document.documentElement.classList.contains('dark')), []);
+  const flip = () => {
+    const next = !dark;
+    setDark(next);
+    document.documentElement.classList.toggle('dark', next);
+    try {
+      localStorage.setItem('ctp-theme', next ? 'dark' : 'light');
+    } catch {
+      /* storage blocked — theme still applies for this visit */
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={flip}
+      className="grid size-8 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+      aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+      title={dark ? 'Light mode' : 'Dark mode'}
+    >
+      {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+    </button>
   );
 }

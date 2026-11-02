@@ -18,6 +18,7 @@ import { SignalService } from './signal.service';
 import { TradingService } from './trading.service';
 import { RiskService } from './risk.service';
 import { AccountEvents } from '../realtime/account-events';
+import { licenceHistory } from '../common/licence';
 
 /** Client (follower) side: discover strategies, subscribe, start/stop copying, and see own portfolio. */
 @Roles('FOLLOWER')
@@ -52,7 +53,10 @@ export class FollowerController {
     const exp = me?.licenceExpiresAt?.getTime() ?? null;
     const primary = accounts.find((a) => a.status === 'CONNECTED') ?? accounts[0] ?? null;
     return {
+      /** Software P&L (strategy trades, also rejected / not-in-demat ones). */
       todayPnl: day.todayPnl,
+      /** Actually executed P&L (demat / paper fills). */
+      brokerPnl: day.brokerPnl,
       /** No demat connected: the client paper-trades on the internal paper account. */
       tradingMode: primary ? (this.trading.isSimulated(primary) ? 'PAPER' : 'LIVE') : 'PAPER',
       broker: primary
@@ -124,6 +128,13 @@ export class FollowerController {
     await this.audit.log({ action: 'PROFILE_UPDATED', actorUserId: user.id, targetType: 'BrokerAccount', targetId: accounts[0]!.id, metadata: { tradingMode: dto.mode, paperClosed }, client: clientInfo(req) });
     for (const a of accounts) this.accountEvents.emit({ type: 'settings', brokerAccountId: a.id, userId: user.id });
     return { mode: dto.mode, paperClosed };
+  }
+
+  /** My licence history (assigned / extended / revoked), newest first. */
+  @Get('licence-history')
+  licenceHistory(@CurrentUser() user: RequestUser) {
+    // Who made the change is not shown to clients (same as the activity log).
+    return licenceHistory(this.prisma, user.id).then((rows) => rows.map((r) => ({ ...r, by: null })));
   }
 
   /** Marketplace: last 7 days of trades of one live strategy (lot size / quantity shown as the master traded). */
@@ -354,6 +365,126 @@ export class FollowerController {
   }
 
   // ------------------------------------------------------------- portfolio
+
+  /**
+   * Signals (software trade book): every strategy trade booked for me today at the strategy's prices — open /
+   * closed and P&L — whether or not the order reached my demat. Whether it did is in the API log.
+   */
+  @Get('signals')
+  async signalsToday(@CurrentUser() user: RequestUser) {
+    const led = await this.summary.ledger(user.id);
+    return { summary: led.summary, totalPnl: led.summary.totalPnl, rows: led.trades };
+  }
+
+  /**
+   * API log: every broker call made for my account (order placement / exit per strategy trade, broker login /
+   * session events) with the broker's answer — this is where I check whether a trade really reached the demat.
+   * Filters: execution (success | error | pending | paper | skipped), type (ENTRY | EXIT | LOGIN), q (search).
+   */
+  @Get('api-log')
+  async apiLog(
+    @CurrentUser() user: RequestUser,
+    @Query('execution') execution?: string,
+    @Query('type') type?: string,
+    @Query('q') q?: string,
+    @Query('page') pageQ?: string,
+    @Query('date') dateQ?: string,
+  ) {
+    const day = dateQ && /^\d{4}-\d{2}-\d{2}$/.test(dateQ) ? new Date(`${dateQ}T00:00:00+05:30`) : startOfTradingDayIST();
+    const until = new Date(day.getTime() + 86_400_000);
+    const [orders, accounts, events] = await Promise.all([
+      this.prisma.copyOrder.findMany({
+        where: { followerUserId: user.id, createdAt: { gte: day, lt: until }, mirrored: false },
+        include: { strategyFollower: { select: { strategy: { select: { name: true } } } }, brokerAccount: { select: { broker: true, brokerClientId: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: 1000,
+      }),
+      this.prisma.brokerAccount.findMany({ where: { userId: user.id, broker: { not: 'MOCK' } }, select: { id: true, broker: true, brokerClientId: true } }),
+      this.prisma.auditLog.findMany({
+        where: { createdAt: { gte: day, lt: until }, action: { in: ['BROKER_CONNECTED', 'BROKER_DISCONNECTED', 'BROKER_TOKEN_EXPIRED', 'BROKER_TAKEN_OVER'] as never[] }, targetType: 'BrokerAccount' },
+        orderBy: { createdAt: 'desc' },
+        take: 500,
+      }),
+    ]);
+    const me = await this.prisma.user.findUnique({ where: { id: user.id }, select: { name: true, email: true } });
+    const acc = new Map(accounts.map((a) => [a.id, a]));
+    type Row = { id: string; at: string; userName: string; email: string; broker: string; loginId: string | null; strategy: string | null; type: 'ENTRY' | 'EXIT' | 'LOGIN'; side: string | null; symbol: string | null; quantity: number | null; execution: 'success' | 'error' | 'pending' | 'paper' | 'skipped'; response: Record<string, unknown> };
+    const rows: Row[] = [];
+    for (const o of orders) {
+      const paper = o.isPaper || o.broker === 'MOCK';
+      const execution: Row['execution'] = paper
+        ? 'paper'
+        : o.errorCode === 'SKIPPED' || o.errorCode === 'CLOSED_AT_BROKER'
+          ? 'skipped'
+          : ['FILLED', 'SUBMITTED', 'OPEN', 'PARTIALLY_FILLED'].includes(o.status)
+            ? 'success'
+            : o.status === 'PENDING' || o.status === 'UNKNOWN'
+              ? 'pending'
+              : 'error';
+      const response: Record<string, unknown> = paper
+        ? { status: 'paper', message: 'Paper trade — simulated in the software, not sent to the broker' }
+        : execution === 'skipped'
+          ? { status: 'not_sent', message: o.errorMessage ?? 'Not sent' }
+          : execution === 'error'
+            ? { status: 'error', orderStatus: o.status, errorcode: o.errorCode, message: o.errorMessage ?? o.status, orderid: o.brokerOrderId }
+            : { status: 'success', orderid: o.brokerOrderId, orderStatus: o.status, filledQuantity: o.filledQuantity, averagePrice: o.averagePrice?.toString() ?? null };
+      rows.push({
+        id: o.id,
+        at: o.createdAt.toISOString(),
+        userName: me?.name ?? '',
+        email: me?.email ?? '',
+        broker: paper ? 'PAPER' : (o.brokerAccount?.broker ?? o.broker),
+        loginId: paper ? null : (o.brokerAccount?.brokerClientId ?? null),
+        strategy: o.strategyFollower.strategy.name,
+        type: o.isExit ? 'EXIT' : 'ENTRY',
+        side: o.side,
+        symbol: o.symbol,
+        quantity: o.quantity,
+        execution,
+        response: { ...response, symbol: o.symbol, side: o.side, quantity: o.quantity, latencyMs: o.latencyMs },
+      });
+    }
+    for (const e of events) {
+      const a = acc.get(e.targetId ?? '');
+      if (!a) continue;
+      const m = (e.metadata ?? {}) as Record<string, unknown>;
+      const ok = e.action === 'BROKER_CONNECTED';
+      rows.push({
+        id: e.id,
+        at: e.createdAt.toISOString(),
+        userName: me?.name ?? '',
+        email: me?.email ?? '',
+        broker: a.broker,
+        loginId: a.brokerClientId,
+        strategy: null,
+        type: 'LOGIN',
+        side: null,
+        symbol: null,
+        quantity: null,
+        execution: ok ? 'success' : 'error',
+        response: ok ? { status: 'success', message: 'Broker connected', expiresAt: m.expiresAt ?? null } : { status: 'error', message: String(m.reason ?? e.action.replace(/_/g, ' ').toLowerCase()) },
+      });
+    }
+    // Last broker login / IP test errors (e.g. "static IP not configured") from Broker API.
+    const cfgs = await this.prisma.brokerApiConfig.findMany({ where: { userId: user.id }, select: { id: true, broker: true, clientCode: true, lastTestAt: true, lastTestOk: true, lastTestError: true, lastLoginAt: true, lastLoginError: true, updatedAt: true } });
+    for (const c of cfgs) {
+      if (c.lastLoginError && c.updatedAt >= day && c.updatedAt < until) {
+        rows.push({ id: `${c.id}:login`, at: c.updatedAt.toISOString(), userName: me?.name ?? '', email: me?.email ?? '', broker: c.broker, loginId: c.clientCode, strategy: null, type: 'LOGIN', side: null, symbol: null, quantity: null, execution: 'error', response: { status: 'error', message: c.lastLoginError } });
+      }
+      if (c.lastTestAt && c.lastTestAt >= day && c.lastTestAt < until && c.lastTestOk === false) {
+        rows.push({ id: `${c.id}:test`, at: c.lastTestAt.toISOString(), userName: me?.name ?? '', email: me?.email ?? '', broker: c.broker, loginId: c.clientCode, strategy: null, type: 'LOGIN', side: null, symbol: null, quantity: null, execution: 'error', response: { status: 'error', message: c.lastTestError ?? 'Connection test failed' } });
+      }
+    }
+    const term = (q ?? '').trim().toLowerCase();
+    const filtered = rows
+      .filter((r) => !execution || execution === 'any' || r.execution === execution)
+      .filter((r) => !type || type === 'any' || r.type === type.toUpperCase())
+      .filter((r) => !term || JSON.stringify(r).toLowerCase().includes(term))
+      .sort((x, y) => (x.at < y.at ? 1 : -1));
+    const page = Math.max(1, Number(pageQ) || 1);
+    const pageSize = 25;
+    return { date: new Date(day.getTime() + 330 * 60_000).toISOString().slice(0, 10), total: filtered.length, page, pageSize, items: filtered.slice((page - 1) * pageSize, page * pageSize) };
+  }
 
   /** Today's trade book: which strategy (algo) each trade came from, entry / exit, lots and P&L. */
   @Get('trades')

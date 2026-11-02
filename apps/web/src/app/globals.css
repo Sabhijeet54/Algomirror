@@ -42,6 +42,43 @@
   --ink: #2b2b2b;
 }
 
+:root.dark {
+  /* Dark theme (header toggle). Same violet brand on deep ink panels. */
+  --frame: #15131f;
+  --background: #0f0e17;
+  --foreground: #ecebf3;
+  --card: #1a1826;
+  --card-foreground: #ecebf3;
+  --popover: #1a1826;
+  --popover-foreground: #ecebf3;
+  --primary: #8b5cff;
+  --primary-foreground: #ffffff;
+  --secondary: #242133;
+  --secondary-foreground: #ecebf3;
+  --muted: #221f31;
+  --muted-foreground: #a3a0b8;
+  --accent: #2b2540;
+  --accent-foreground: #c7b6ff;
+  --destructive: #f2555a;
+  --destructive-foreground: #ffffff;
+  --success: #3ccf72;
+  --warning: #f0a92a;
+  --border: #2c2940;
+  --input: #34304a;
+  --ring: #8b5cff;
+  --sidebar: #161421;
+  --sidebar-foreground: #c4c1d6;
+  --sidebar-muted: #7e7a95;
+  --sidebar-accent: #2b2540;
+  --sidebar-active: #c7b6ff;
+  --tile-mint: #123a31;
+  --tile-violet: #2c2252;
+  --tile-sand: #3d3216;
+  --tile-lime: #29391a;
+  --tile-sky: #182d48;
+  --ink: #ecebf3;
+}
+
 @theme inline {
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
@@ -92,6 +129,9 @@
   }
   html {
     color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
   }
 }
 

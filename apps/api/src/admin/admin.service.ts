@@ -55,6 +55,7 @@ import {
   UpdateUserDto,
 } from './dto/admin.dto';
 import { hashPassword } from '@ctp/shared';
+import { licenceExpiry, licenceHistory } from '../common/licence';
 
 const IST_OFFSET_MS = 330 * 60 * 1000;
 
@@ -211,10 +212,10 @@ export class AdminService {
         passwordHash: await hashPassword(dto.password),
         emailVerifiedAt: now, // created by an admin: no verification mail needed
         demo: dto.role === 'FOLLOWER' && !!dto.demo,
-        ...(dto.licenceDays ? { licenceDays: dto.licenceDays, licenceAssignedAt: now, licenceExpiresAt: new Date(now.getTime() + dto.licenceDays * 86_400_000) } : {}),
+        ...(dto.licenceDays ? { licenceDays: dto.licenceDays, licenceAssignedAt: now, licenceExpiresAt: licenceExpiry(now, dto.licenceDays) } : {}),
       },
     });
-    await this.audit.log({ action: 'PROFILE_UPDATED', actorUserId: admin.id, targetType: 'User', targetId: user.id, metadata: { createdByAdmin: true, role: dto.role, licenceDays: dto.licenceDays ?? null }, client });
+    await this.audit.log({ action: 'PROFILE_UPDATED', actorUserId: admin.id, targetType: 'User', targetId: user.id, metadata: { createdByAdmin: true, role: dto.role, licenceDays: dto.licenceDays ?? null, demo: dto.role === 'FOLLOWER' && !!dto.demo, ...(dto.licenceDays ? { expiresAt: user.licenceExpiresAt?.toISOString() } : {}) }, client });
     return this.getUser(user.id);
   }
 
@@ -242,17 +243,25 @@ export class AdminService {
     if (!user) throw new NotFoundException('User not found');
     this.guardStaff(admin, user.role);
     const now = new Date();
-    const running = user.licenceExpiresAt && user.licenceExpiresAt > now;
-    const base = dto.extend !== false && running ? user.licenceExpiresAt! : now;
-    const expires = new Date(base.getTime() + dto.days * 86_400_000);
+    const running = !!user.licenceExpiresAt && user.licenceExpiresAt > now;
+    const extend = dto.extend !== false && running;
+    // Runs to the end of the last day (IST) — never stops in the middle of a trading day.
+    const expires = licenceExpiry(extend ? user.licenceExpiresAt! : now, dto.days);
     await this.prisma.user.update({
       where: { id },
-      data: { licenceDays: (dto.extend !== false && running ? (user.licenceDays ?? 0) : 0) + dto.days, licenceAssignedAt: now, licenceExpiresAt: expires, demo: !!dto.demo },
+      data: { licenceDays: (extend ? (user.licenceDays ?? 0) : 0) + dto.days, licenceAssignedAt: now, licenceExpiresAt: expires, demo: !!dto.demo },
     });
-    await this.audit.log({ action: 'PROFILE_UPDATED', actorUserId: admin.id, targetType: 'User', targetId: id, metadata: { licenceDays: dto.days, demo: !!dto.demo, extend: dto.extend !== false, expiresAt: expires.toISOString() }, client });
+    await this.audit.log({ action: 'PROFILE_UPDATED', actorUserId: admin.id, targetType: 'User', targetId: id, metadata: { licenceDays: dto.days, demo: !!dto.demo, extend, expiresAt: expires.toISOString() }, client });
     if (dto.demo) await this.prisma.brokerAccount.updateMany({ where: { userId: id, mode: 'TRADING' }, data: { isPaper: true } });
     this.accountEvents.emit({ type: 'settings', brokerAccountId: '', userId: id });
     return this.getUser(id);
+  }
+
+  async licenceHistory(admin: RequestUser, id: string) {
+    const user = await this.prisma.user.findUnique({ where: { id }, select: { role: true } });
+    if (!user) throw new NotFoundException('User not found');
+    this.guardStaff(admin, user.role);
+    return licenceHistory(this.prisma, id);
   }
 
   async revokeLicence(admin: RequestUser, id: string, client: ClientInfo): Promise<AdminUserDetail> {

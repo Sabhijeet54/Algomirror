@@ -10,7 +10,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { type ClientDashboard as Data, useClientDashboard } from '@/lib/broker-api';
 import { brokerLabel, formatINR } from '@/lib/format';
-import { useSetTradingMode } from '@/lib/trading';
+import { useMyLicenceHistory, useSetTradingMode } from '@/lib/trading';
+import { LicenceHistoryList } from '@/components/admin-user-dialogs';
+import { AlgoSignalsCard } from '@/components/algo-signals';
+import { MarketTicker } from '@/components/market-ticker';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
@@ -161,6 +164,20 @@ function TradingModeSwitch({ b, locked = false }: { b: NonNullable<Data['broker'
   );
 }
 
+/** "History" link on the licence card: every assign / extend / revoke of my licence. */
+function LicenceHistoryToggle() {
+  const [open, setOpen] = useState(false);
+  const h = useMyLicenceHistory(open);
+  return (
+    <div className="grid gap-2">
+      <button type="button" className="w-fit text-xs font-medium text-primary hover:underline" onClick={() => setOpen((o) => !o)}>
+        {open ? 'Hide licence history' : 'Licence history'}
+      </button>
+      {open ? <LicenceHistoryList rows={h.data} loading={h.isLoading} /> : null}
+    </div>
+  );
+}
+
 export function ClientDashboard() {
   const q = useClientDashboard();
   const d = q.data;
@@ -179,7 +196,8 @@ export function ClientDashboard() {
   const up = d.todayPnl >= 0;
 
   return (
-    <div className="mb-6 grid gap-4">
+    <div className="mb-6 grid gap-4 [&>*]:min-w-0">
+      <MarketTicker />
       {d.licence.active === false ? (
         <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <strong>Your licence has expired.</strong> Auto trading (paper and live), strategy connect and broker connect are blocked. Contact your master to renew.
@@ -197,11 +215,19 @@ export function ClientDashboard() {
                 {formatINR(d.todayPnl)}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Today&apos;s profit / loss ·{' '}
-                <Link href="/portfolio/positions" className="font-medium text-primary hover:underline">
-                  positions
+                All strategy trades (booked in software) ·{' '}
+                <Link href="/signals" className="font-medium text-primary hover:underline">
+                  signals
                 </Link>
               </p>
+              {d.brokerPnl != null ? (
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  Executed in demat / paper: <Pnl value={d.brokerPnl} /> ·{' '}
+                  <Link href="/api-log" className="font-medium text-primary hover:underline">
+                    API log
+                  </Link>
+                </p>
+              ) : null}
             </div>
             {up ? <ArrowUpRight className="size-8 text-success" /> : <ArrowDownRight className="size-8 text-destructive" />}
           </CardContent>
@@ -295,6 +321,7 @@ export function ClientDashboard() {
                 <p className="text-xs text-muted-foreground">Contact your master to activate your subscription.</p>
               </>
             )}
+            <LicenceHistoryToggle />
           </CardContent>
         </Card>
         ) : null}
@@ -326,6 +353,7 @@ export function ClientDashboard() {
                 <TableRow>
                   <TableHead className="pl-6">Algo name</TableHead>
                   <TableHead>Allocation</TableHead>
+                  <TableHead className="text-right">Quantity</TableHead>
                   <TableHead className="text-right">Today P&amp;L</TableHead>
                   <TableHead className="pr-6">Status</TableHead>
                 </TableRow>
@@ -333,7 +361,7 @@ export function ClientDashboard() {
               <TableBody>
                 {sorted.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
                       No strategy assigned to you yet — contact your admin.
                     </TableCell>
                   </TableRow>
@@ -342,6 +370,7 @@ export function ClientDashboard() {
                     <TableRow key={s.followerId}>
                       <TableCell className="pl-6 font-medium">{s.name}</TableCell>
                       <TableCell className="text-muted-foreground">{s.allocation}</TableCell>
+                      <TableCell className="text-right tabular-nums">{s.todayQty ?? 0}</TableCell>
                       <TableCell className="text-right font-medium">
                         <Pnl value={s.todayPnl} />
                       </TableCell>
@@ -368,6 +397,8 @@ export function ClientDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      <AlgoSignalsCard compact />
     </div>
   );
 }

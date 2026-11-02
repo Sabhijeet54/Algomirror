@@ -643,6 +643,81 @@ export function useMasterLicenceMutations() {
   };
 }
 
+/** One strategy trade booked in the software (Signals) — independent of whether the demat executed it. */
+export interface SoftwareTradeRow {
+  tradeId: string;
+  signalId: string;
+  followerId: string;
+  strategyName: string;
+  mode: 'PAPER' | 'LIVE';
+  exchange: string;
+  symbol: string;
+  productType: string;
+  side: 'BUY' | 'SELL';
+  quantity: number;
+  lots: number | null;
+  openQuantity: number;
+  entryPrice: number;
+  entryAt: string;
+  carried: boolean;
+  exitPrice: number | null;
+  exitAt: string | null;
+  ltp: number | null;
+  status: 'OPEN' | 'CLOSED';
+  realizedPnl: number;
+  unrealizedPnl: number;
+  pnl: number;
+  execution: 'PAPER' | 'EXECUTED' | 'PARTIAL' | 'PENDING' | 'NOT_EXECUTED';
+}
+export const useMySignals = () =>
+  useQuery({
+    queryKey: ['follow', 'signals'],
+    queryFn: () => api<{ totalPnl: number; summary: { trades: number; open: number; closed: number; realizedPnl: number; unrealizedPnl: number; totalPnl: number }; rows: SoftwareTradeRow[] }>('/follow/signals'),
+    refetchInterval: 5_000,
+  });
+
+export type ApiLogExecution = 'success' | 'error' | 'pending' | 'paper' | 'skipped';
+export interface ApiLogRow {
+  id: string;
+  at: string;
+  userName: string;
+  email: string;
+  broker: string;
+  loginId: string | null;
+  strategy: string | null;
+  type: 'ENTRY' | 'EXIT' | 'LOGIN';
+  side: string | null;
+  symbol: string | null;
+  quantity: number | null;
+  execution: ApiLogExecution;
+  response: Record<string, unknown>;
+}
+export const useApiLog = (p: { execution?: string; type?: string; q?: string; page?: number; date?: string }) =>
+  useQuery({
+    queryKey: ['follow', 'api-log', p],
+    queryFn: () => api<{ date: string; total: number; page: number; pageSize: number; items: ApiLogRow[] }>('/follow/api-log', { query: p }),
+    refetchInterval: 10_000,
+  });
+
+export interface LicenceHistoryItem {
+  at: string;
+  kind: 'ASSIGNED' | 'EXTENDED' | 'REVOKED' | 'CREATED';
+  days: number | null;
+  demo: boolean;
+  expiresAt: string | null;
+  by: { name: string; role: string } | null;
+}
+/** Licence history of a user — admin (`/admin/users/:id`) or master (`/master/clients/:id`). */
+export const useLicenceHistory = (scope: StaffScope, id: string | null) =>
+  useQuery({
+    queryKey: [scope, 'licence-history', id],
+    queryFn: () => api<LicenceHistoryItem[]>(scope === 'admin' ? `/admin/users/${id}/licence-history` : `/master/clients/${id}/licence-history`),
+    enabled: !!id,
+  });
+/** The signed-in client's own licence history. */
+export const useMyLicenceHistory = (enabled = true) =>
+  useQuery({ queryKey: ['follow', 'licence-history'], queryFn: () => api<LicenceHistoryItem[]>('/follow/licence-history'), enabled });
+
 export interface SubAdminRow {
   id: string;
   name: string;

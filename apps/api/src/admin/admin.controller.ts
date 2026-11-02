@@ -108,6 +108,12 @@ export class AdminController {
     return this.admin.revokeLicence(me, id, clientInfo(req));
   }
 
+  /** Licence history (assign / extend / revoke, by whom) of one user, newest first. */
+  @Get('users/:id/licence-history')
+  licenceHistory(@CurrentUser() me: RequestUser, @Param('id') id: string) {
+    return this.admin.licenceHistory(me, id);
+  }
+
   // --------------------------------------------------------------- signals (all masters)
 
   @Get('signals')
