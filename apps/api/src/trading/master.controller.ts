@@ -406,7 +406,8 @@ export class MasterController {
     const out = await Promise.all(
       [...byUser.entries()].map(async ([userId, list]) => {
         const f = userById.get(userId)!;
-        const account = list.find((x) => x.brokerAccount)?.brokerAccount ?? accounts.find((a) => a.userId === userId) ?? null;
+        // Real demat first (the internal paper account is not a broker).
+        const account = list.find((x) => x.brokerAccount && x.brokerAccount.broker !== 'MOCK')?.brokerAccount ?? accounts.find((a) => a.userId === userId) ?? null;
         const day = await this.summary.today(userId, user.id);
         return {
           userId,

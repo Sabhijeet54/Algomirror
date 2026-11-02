@@ -62,6 +62,8 @@ export function useBrokerApiMutations(b: BrokerSlug) {
 
 export interface ClientDashboard {
   todayPnl: number;
+  /** PAPER when no demat is connected. */
+  tradingMode?: 'PAPER' | 'LIVE';
   broker: {
     accountId: string;
     broker: string;

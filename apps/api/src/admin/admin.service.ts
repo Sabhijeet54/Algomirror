@@ -109,7 +109,7 @@ export class AdminService {
       failedCopyOrders,
     ] = await Promise.all([
       this.prisma.user.count(),
-      this.prisma.brokerAccount.count({ where: { status: 'CONNECTED' } }),
+      this.prisma.brokerAccount.count({ where: { status: 'CONNECTED', broker: { not: 'MOCK' } } }),
       this.prisma.user.count({ where: { role: 'MASTER', status: 'ACTIVE', strategies: { some: { status: 'ACTIVE' } } } }),
       this.prisma.strategyFollower.groupBy({ by: ['followerUserId'], where: { copyStatus: 'ON' } }),
       this.prisma.strategy.count({ where: { status: 'ACTIVE' } }),
@@ -126,7 +126,7 @@ export class AdminService {
       this.prisma.user.count({ where: { createdAt: { gte: lastMonthStart, lt: monthStart } } }),
       this.prisma.user.count({ where: { licenceExpiresAt: { lte: now } } }),
       this.prisma.user.count({ where: { licenceExpiresAt: { gt: now, lte: new Date(now.getTime() + 7 * 86_400_000) } } }),
-      this.prisma.user.count({ where: { role: 'FOLLOWER', status: 'ACTIVE', brokerAccounts: { some: { status: 'CONNECTED', mode: 'TRADING' } } } }),
+      this.prisma.user.count({ where: { role: 'FOLLOWER', status: 'ACTIVE', brokerAccounts: { some: { status: 'CONNECTED', mode: 'TRADING', broker: { not: 'MOCK' } } } } }),
     ]);
     return {
       totalUsers,

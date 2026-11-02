@@ -117,7 +117,11 @@ export class BrokersController {
 
   @Get('accounts')
   async myAccounts(@CurrentUser() user: RequestUser): Promise<BrokerAccountView[]> {
-    const accounts = await this.prisma.brokerAccount.findMany({ where: { userId: user.id, ...(user.role !== 'FOLLOWER' ? { broker: { notIn: ['ZERODHA'] } } : {}) }, orderBy: { createdAt: 'asc' } });
+    // Clients: real demat connections only — the internal paper account (MOCK) is not a broker connection.
+    const accounts = await this.prisma.brokerAccount.findMany({
+      where: { userId: user.id, broker: { notIn: user.role !== 'FOLLOWER' ? ['ZERODHA'] : ['MOCK'] } },
+      orderBy: { createdAt: 'asc' },
+    });
     return accounts.map(toBrokerAccountView);
   }
 

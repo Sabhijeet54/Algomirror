@@ -224,7 +224,7 @@ export class ClientSummaryService {
       exitValue: number;
       exitAt: string | null;
     };
-    type Ev = { at: number; kind: 'entry' | 'exit' | 'adjust' | 'manualExit'; key: string; followerId?: string; accountId?: string; side: 'BUY' | 'SELL'; qty: number; price: number; id: string; lot: number; ex: string; sym: string; product: string };
+    type Ev = { at: number; kind: 'entry' | 'exit' | 'adjust' | 'manualExit'; key: string; followerId?: string; accountId?: string; side: 'BUY' | 'SELL'; qty: number; price: number; id: string; lot: number; ex: string; sym: string; product: string; partial?: boolean };
     const evs: Ev[] = [];
     const subById2 = new Map(subs.map((x) => [x.id, x]));
     for (const o of orders) {
@@ -245,13 +245,13 @@ export class ClientSummaryService {
       });
     }
     for (const a of audits) {
-      const m = a.metadata as { manualExit?: boolean; manualAdjust?: boolean; exchange?: string; symbol?: string; productType?: string; side?: string; quantity?: number; price?: number | null } | null;
+      const m = a.metadata as { manualExit?: boolean; manualAdjust?: boolean; partial?: boolean; followerId?: string; exchange?: string; symbol?: string; productType?: string; side?: string; quantity?: number; price?: number | null } | null;
       if (!m?.exchange || !m.symbol || !m.productType || !a.targetId) continue;
       const px = m.price ?? this.prices.get(instrumentKey(m.exchange, m.symbol)) ?? 0;
       if (!DISPLAY_SCALED && m.manualAdjust && a.targetType === 'StrategyFollower' && m.quantity) {
         evs.push({ at: a.createdAt.getTime(), kind: 'adjust', key: `${a.targetId}|${m.exchange}:${m.symbol}|${m.productType}`, followerId: a.targetId, side: m.side === 'SELL' ? 'SELL' : 'BUY', qty: m.quantity, price: px, id: '', lot: 1, ex: m.exchange, sym: m.symbol, product: m.productType });
       } else if (m.manualExit && a.targetType === 'BrokerAccount') {
-        evs.push({ at: a.createdAt.getTime(), kind: 'manualExit', key: `*|${m.exchange}:${m.symbol}|${m.productType}`, accountId: a.targetId, side: m.side === 'BUY' ? 'BUY' : 'SELL', qty: m.quantity ?? 0, price: px, id: '', lot: 1, ex: m.exchange, sym: m.symbol, product: m.productType });
+        evs.push({ at: a.createdAt.getTime(), kind: 'manualExit', key: `*|${m.exchange}:${m.symbol}|${m.productType}`, accountId: a.targetId, side: m.side === 'BUY' ? 'BUY' : 'SELL', qty: m.quantity ?? 0, price: px, id: '', lot: 1, ex: m.exchange, sym: m.symbol, product: m.productType, partial: !!m.partial, followerId: m.followerId });
       }
     }
     evs.sort((x, y) => x.at - y.at);
@@ -287,6 +287,11 @@ export class ClientSummaryService {
           last.entryPrice = (last.entryPrice * last.quantity + e.price * e.qty) / (last.quantity + e.qty);
           last.quantity += e.qty;
         } else close(open, e.qty, e.price, e.at);
+      } else if (e.partial) {
+        // exited in the broker app (all or part): close that quantity, oldest trades first
+        // `followerId` set = only that subscription's trades (another strategy on the same demat is untouched)
+        const list = rows.filter((r) => (e.followerId ? r.followerId === e.followerId : accountOf.get(r.followerId) === e.accountId) && r.exchange === e.ex && r.symbol === e.sym && r.productType === e.product && r.closedQty < r.quantity && r.side !== e.side);
+        close(list, e.qty, e.price, e.at);
       } else {
         // manual exit of the whole account position: close every open row of this contract on that account
         for (const r of rows) {

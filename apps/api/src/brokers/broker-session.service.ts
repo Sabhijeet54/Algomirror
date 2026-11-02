@@ -176,6 +176,8 @@ export class BrokerSessionService {
     }
     // Master accounts are market-data feeds only; they never place orders.
     const mode = user.role === 'MASTER' ? 'DATA_ONLY' : 'TRADING';
+    // A client who was paper-trading without a demat stays on paper after connecting one (switches to Live himself).
+    const wasPaperTrading = mode === 'TRADING' && (await this.prisma.brokerAccount.count({ where: { userId, broker: 'MOCK' } })) > 0;
 
     const { account, takenOver } = await this.prisma.$transaction(async (tx) => {
       // 1) Take the client ID away from any other user that currently has it connected.
@@ -207,7 +209,7 @@ export class BrokerSessionService {
       const existing = await tx.brokerAccount.upsert({
         where: { userId_broker: { userId, broker } },
         // A new client account starts in PAPER when the platform default is paper (PAPER_MODE=true); the client switches to LIVE.
-        create: { userId, broker, brokerClientId: s.brokerClientId, status: 'PENDING', mode, isPaper: mode === 'TRADING' && (this.config.PAPER_MODE || user.demo) },
+        create: { userId, broker, brokerClientId: s.brokerClientId, status: 'PENDING', mode, isPaper: mode === 'TRADING' && (this.config.PAPER_MODE || user.demo || wasPaperTrading) },
         update: {},
       });
       if (existing.status === 'CONNECTED' && existing.brokerClientId && existing.brokerClientId !== s.brokerClientId) {
@@ -244,6 +246,14 @@ export class BrokerSessionService {
           disconnectedAt: null,
         },
       });
+      // Strategies that ran without a demat (internal paper account) now use this account. Copy ON/OFF and the
+      // paper / live switch are not changed by connecting.
+      if (mode === 'TRADING') {
+        await tx.strategyFollower.updateMany({
+          where: { followerUserId: userId, OR: [{ brokerAccountId: null }, { brokerAccount: { broker: 'MOCK' } }] },
+          data: { brokerAccountId: existing.id },
+        });
+      }
       await this.audit.logTx(tx, {
         action: 'BROKER_CONNECTED',
         actorUserId: userId,

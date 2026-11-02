@@ -76,7 +76,7 @@ export default function MarketplacePage() {
   const rows = q.data ?? [];
   return (
     <>
-      <PageHeader title="Marketplace" description="Strategies assigned to you by your master. Connect one with your lot size — auto trading starts right away (broker must be connected)." />
+      <PageHeader title="Marketplace" description="Strategies assigned to you by your master. Connect one with your lot size — auto trading starts right away (paper trading needs no demat; live needs your broker connected)." />
       {q.isLoading ? <p className="text-sm text-muted-foreground">Loading…</p> : null}
       {!q.isLoading && rows.length === 0 ? <p className="text-sm text-muted-foreground">No strategy assigned to you yet — contact your master.</p> : null}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

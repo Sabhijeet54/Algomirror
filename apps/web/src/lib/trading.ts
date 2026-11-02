@@ -88,7 +88,8 @@ export interface MasterOrderInput {
   stopLossPrice?: number;
 }
 export interface FollowInput {
-  brokerAccountId: string;
+  /** Optional — without a demat the strategy runs on paper. */
+  brokerAccountId?: string;
   /** Resize trades already booked (still open) to the new lot multiplier (default true). */
   applyToOpenTrades?: boolean;
   allocationMode: 'FIXED_QUANTITY' | 'CAPITAL_PERCENTAGE' | 'PROPORTIONAL';

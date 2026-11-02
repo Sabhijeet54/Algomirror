@@ -53,6 +53,8 @@ export class FollowerController {
     const primary = accounts.find((a) => a.status === 'CONNECTED') ?? accounts[0] ?? null;
     return {
       todayPnl: day.todayPnl,
+      /** No demat connected: the client paper-trades on the internal paper account. */
+      tradingMode: primary ? (this.trading.isSimulated(primary) ? 'PAPER' : 'LIVE') : 'PAPER',
       broker: primary
         ? {
             accountId: primary.id,
@@ -91,7 +93,12 @@ export class FollowerController {
   @Post('trading-mode')
   async tradingMode(@CurrentUser() user: RequestUser, @Body() dto: TradingModeDto, @Req() req: Request) {
     const accounts = await this.prisma.brokerAccount.findMany({ where: { userId: user.id, broker: { not: 'MOCK' }, mode: 'TRADING' } });
-    if (!accounts.length) throw new BadRequestException('Connect your broker first.');
+    // Paper trading needs no demat: without a broker the client trades on the internal paper account.
+    if (!accounts.length) {
+      if (dto.mode === 'LIVE') throw new BadRequestException('Live trading needs a connected demat — connect your broker in Broker connection. Paper trading works without it.');
+      await this.trading.ensureLedgerAccount(user.id);
+      return { mode: 'PAPER' as const, paperClosed: 0 };
+    }
     if (dto.mode === 'LIVE') {
       const me = await this.prisma.user.findUnique({ where: { id: user.id }, select: { demo: true } });
       if (me?.demo) throw new ForbiddenException('Demo licence: only paper trading is allowed. Ask your master for a full licence to trade live.');
@@ -100,7 +107,9 @@ export class FollowerController {
     // exit would go to the live broker (where nothing is held) and the old paper trade would never be cut.
     let paperClosed = 0;
     if (dto.mode === 'LIVE') {
-      for (const a of accounts) {
+      // Includes the internal paper account (paper trades taken before a demat was connected).
+      const ledger = await this.prisma.brokerAccount.findUnique({ where: { userId_broker: { userId: user.id, broker: 'MOCK' } } });
+      for (const a of ledger ? [...accounts, ledger] : accounts) {
         if (!this.trading.isSimulated(a)) continue;
         const r = await this.risk.squareOffAccount(a, { intradayOnly: false }).catch((e: Error) => {
           throw new BadRequestException(`Could not close your open paper trades (${e.message}) — try again.`);
@@ -109,6 +118,9 @@ export class FollowerController {
       }
     }
     await this.prisma.brokerAccount.updateMany({ where: { id: { in: accounts.map((a) => a.id) } }, data: { isPaper: dto.mode === 'PAPER' } });
+    // Subscriptions still on the internal paper account move to the demat, so the switch really applies to them.
+    const real = accounts.find((a) => a.status === 'CONNECTED') ?? accounts[0]!;
+    await this.prisma.strategyFollower.updateMany({ where: { followerUserId: user.id, OR: [{ brokerAccountId: null }, { brokerAccount: { broker: 'MOCK' } }] }, data: { brokerAccountId: real.id } });
     await this.audit.log({ action: 'PROFILE_UPDATED', actorUserId: user.id, targetType: 'BrokerAccount', targetId: accounts[0]!.id, metadata: { tradingMode: dto.mode, paperClosed }, client: clientInfo(req) });
     for (const a of accounts) this.accountEvents.emit({ type: 'settings', brokerAccountId: a.id, userId: user.id });
     return { mode: dto.mode, paperClosed };
@@ -238,7 +250,12 @@ export class FollowerController {
   async follow(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: FollowDto, @Req() req: Request) {
     const s = await this.prisma.strategy.findUnique({ where: { id }, include: { _count: { select: { followers: true } } } });
     if (!s || s.status === 'ARCHIVED' || s.status === 'DRAFT') throw new NotFoundException('Strategy not available');
-    const account = await this.prisma.brokerAccount.findFirst({ where: { id: dto.brokerAccountId, userId: user.id } });
+    // Broker account is optional: without a demat the strategy runs on paper (internal paper account).
+    const account = dto.brokerAccountId
+      ? await this.prisma.brokerAccount.findFirst({ where: { id: dto.brokerAccountId, userId: user.id } })
+      : await this.prisma.brokerAccount
+          .findMany({ where: { userId: user.id, mode: 'TRADING', broker: { not: 'MOCK' } }, orderBy: { createdAt: 'asc' } })
+          .then(async (list) => list.find((a) => a.status === 'CONNECTED') ?? list[0] ?? (await this.trading.ensureLedgerAccount(user.id)));
     if (!account) throw new BadRequestException('Choose one of your broker accounts');
     if (account.mode === 'DATA_ONLY') throw new BadRequestException('This account is a data-only (master) account and cannot receive orders.');
     if (dto.allocationMode === 'FIXED_QUANTITY' && !dto.fixedQuantity && !dto.fixedLots) throw new BadRequestException('Fixed quantity or fixed lots is required');
@@ -297,22 +314,26 @@ export class FollowerController {
     const sub = await this.prisma.strategyFollower.findFirst({ where: { id, followerUserId: user.id }, include: { brokerAccount: true } });
     if (!sub) throw new NotFoundException('Subscription not found');
     if (action === 'start' && isRemoved(sub)) throw new BadRequestException('This strategy is no longer assigned to you.');
+    let accountId = sub.brokerAccountId;
     if (action === 'start') {
       const a = sub.brokerAccount;
-      if (!a) throw new BadRequestException('Select a broker account first');
-      if (a.broker !== 'MOCK' && a.status !== 'CONNECTED') throw new BadRequestException('Your broker is not connected — log in to your broker first.');
-      if (a.mode === 'DATA_ONLY') throw new BadRequestException('A data-only (master) account cannot be used for copy trading.');
+      // No demat yet → paper trading on the internal paper account. A demat is needed only for LIVE orders.
+      if (!a) accountId = (await this.trading.ensureLedgerAccount(user.id)).id;
+      else if (!this.trading.isSimulated(a) && a.status !== 'CONNECTED') {
+        throw new BadRequestException('Live trading needs your demat connected — log in to your broker, or switch to Paper on the dashboard.');
+      }
+      if (a?.mode === 'DATA_ONLY') throw new BadRequestException('A data-only (master) account cannot be used for copy trading.');
     }
     const row = await this.prisma.strategyFollower.update({
       where: { id },
       data:
         action === 'start'
-          ? { copyStatus: 'ON', startedAt: new Date(), stoppedAt: null, stoppedReason: null }
+          ? { copyStatus: 'ON', startedAt: new Date(), stoppedAt: null, stoppedReason: null, brokerAccountId: accountId }
           : { copyStatus: 'OFF', stoppedAt: new Date(), stoppedReason: 'Stopped by client', stoppedByUserId: user.id },
       include: { strategy: { select: { name: true } } },
     });
     await this.audit.log({ action: action === 'start' ? 'COPY_STARTED' : 'COPY_STOPPED', actorUserId: user.id, targetType: 'StrategyFollower', targetId: id, client: clientInfo(req) });
-    this.accountEvents.emit({ type: 'settings', brokerAccountId: sub.brokerAccountId ?? '', userId: user.id });
+    this.accountEvents.emit({ type: 'settings', brokerAccountId: accountId ?? '', userId: user.id });
     return toStrategyFollowerView(row);
   }
 
@@ -364,7 +385,7 @@ export class FollowerController {
     const myAccounts = await this.prisma.brokerAccount.findMany({ where: { userId: user.id, broker: { not: 'MOCK' }, mode: 'TRADING' } });
     return {
       /** true = my trading account is on Paper (my own switch). */
-      paperMode: myAccounts.length > 0 && myAccounts.every((a) => this.trading.isSimulated(a)),
+      paperMode: myAccounts.length === 0 || myAccounts.every((a) => this.trading.isSimulated(a)),
       todayPnl: day.todayPnl,
       live: overlayLivePrices(live, this.prices, this.feed),
       paperPositions: paper.map((p) => paperPositionView(p, this.prices, this.feed)),

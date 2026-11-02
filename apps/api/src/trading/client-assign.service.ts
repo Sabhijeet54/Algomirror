@@ -6,6 +6,7 @@ import { AccountEvents } from '../realtime/account-events';
 import type { AssignClientDto } from './trading.dto';
 import { PositionResizeService, type ResizeResult } from './position-resize.service';
 import { isRemoved, REMOVED_REASON } from './follower-access';
+import { TradingService } from './trading.service';
 
 /**
  * Master / admin assigns a client to a strategy (instead of the client subscribing himself).
@@ -19,6 +20,7 @@ export class ClientAssignService {
     private readonly audit: AuditService,
     private readonly accountEvents: AccountEvents,
     private readonly resizer: PositionResizeService,
+    private readonly trading: TradingService,
   ) {}
 
   async assign(strategy: Strategy, dto: AssignClientDto, actorUserId: string) {
@@ -33,6 +35,8 @@ export class ClientAssignService {
       ? accounts.find((a) => a.id === dto.brokerAccountId)
       : (accounts.find((a) => a.status === 'CONNECTED') ?? accounts.find((a) => a.isPaper || a.broker === 'MOCK') ?? accounts[0]);
     if (dto.brokerAccountId && !account) throw new BadRequestException('That broker account does not belong to this client');
+    // No demat at all: the client paper-trades on the internal paper account.
+    const useAccount = account ?? (await this.trading.ensureLedgerAccount(client.id));
 
     const existing = await this.prisma.strategyFollower.findUnique({ where: { strategyId_followerUserId: { strategyId: strategy.id, followerUserId: client.id } } });
     if (!existing && strategy.maxFollowers) {
@@ -44,9 +48,9 @@ export class ClientAssignService {
     if (mode === 'CAPITAL_PERCENTAGE' && !dto.allocationPercent) throw new BadRequestException('Allocation % is required');
     if (mode === 'PROPORTIONAL' && !dto.allocationAmount) throw new BadRequestException('Capital amount is required');
 
-    const canStart = Boolean(dto.startCopy && account && (account.status === 'CONNECTED' || account.isPaper || account.broker === 'MOCK'));
+    const canStart = Boolean(dto.startCopy && (useAccount.status === 'CONNECTED' || this.trading.isSimulated(useAccount)));
     const data = {
-      brokerAccountId: account?.id ?? null,
+      brokerAccountId: useAccount.id,
       allocationMode: mode,
       allocationAmount: dto.allocationAmount ?? null,
       allocationPercent: dto.allocationPercent ?? null,
@@ -75,7 +79,7 @@ export class ClientAssignService {
       targetId: row.id,
       metadata: { assignedBy: actorUserId, strategyId: strategy.id, clientId: client.id, copy: canStart ? 'ON' : 'OFF' },
     });
-    this.accountEvents.emit({ type: 'settings', brokerAccountId: account?.id ?? '', userId: client.id });
+    this.accountEvents.emit({ type: 'settings', brokerAccountId: useAccount.id, userId: client.id });
     // A changed lot multiplier also applies to trades already booked (still open) in this strategy.
     let resized: ResizeResult[] = [];
     if (existing && process.env.ALLOW_LIVE_RESIZE === 'true') {
@@ -88,7 +92,7 @@ export class ClientAssignService {
     return {
       follower: row,
       resized,
-      warning: dto.startCopy && !canStart ? 'Assigned with copy OFF — the client has no connected broker account yet.' : null,
+      warning: dto.startCopy && !canStart ? 'Assigned with copy OFF — the client is on LIVE and the demat is not connected (paper needs no demat).' : null,
     };
   }
 

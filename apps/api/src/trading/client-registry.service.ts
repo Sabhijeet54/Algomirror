@@ -377,7 +377,17 @@ export class ClientRegistryService implements OnApplicationBootstrap, OnModuleDe
     for (const f of await this.prisma.strategyFollower.findMany({ where: { brokerAccountId: { not: null } }, select: { id: true, brokerAccountId: true } })) {
       followersByAccount.set(f.brokerAccountId!, [...(followersByAccount.get(f.brokerAccountId!) ?? []), f.id]);
     }
-    type M = { manualExit?: boolean; manualAdjust?: boolean; exchange?: string; symbol?: string; productType?: ProductType; side?: string; quantity?: number };
+    type M = {
+      manualExit?: boolean;
+      manualAdjust?: boolean;
+      exchange?: string;
+      symbol?: string;
+      productType?: ProductType;
+      side?: string;
+      quantity?: number;
+      /** Exit done in the broker app: exact per-subscription reductions (may be partial). */
+      followerAdjust?: { followerId: string; qty: number }[];
+    };
     const events: { at: number; run: () => void }[] = [];
     this.netPos.clear();
     this.masterNet.clear();
@@ -393,7 +403,10 @@ export class ClientRegistryService implements OnApplicationBootstrap, OnModuleDe
     for (const a of manual) {
       const m = a.metadata as M | null;
       if (!m?.exchange || !m.symbol || !m.productType || !a.targetId) continue;
-      if (m.manualExit && a.targetType === 'BrokerAccount') {
+      if (m.manualExit && a.targetType === 'BrokerAccount' && m.followerAdjust?.length) {
+        const adj = m.followerAdjust;
+        events.push({ at: a.createdAt.getTime(), run: () => adj.forEach((x) => this.applyClientFill(x.followerId, m.exchange!, m.symbol!, m.productType!, x.qty)) });
+      } else if (m.manualExit && a.targetType === 'BrokerAccount') {
         events.push({ at: a.createdAt.getTime(), run: () => this.clearPosition(followersByAccount.get(a.targetId!) ?? [], m.exchange!, m.symbol!, m.productType!) });
       } else if (m.manualAdjust && a.targetType === 'StrategyFollower' && m.quantity) {
         const signed = m.side === 'SELL' ? -m.quantity : m.quantity;

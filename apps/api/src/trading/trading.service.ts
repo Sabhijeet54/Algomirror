@@ -63,6 +63,18 @@ export class TradingService implements OnModuleInit {
     return this.config.PAPER_MODE;
   }
 
+  /**
+   * The client's internal PAPER account (broker MOCK) — not a broker connection. Lets a client paper-trade (and
+   * see paper trades / P&L) without connecting a demat. Created on demand; always simulated.
+   */
+  async ensureLedgerAccount(userId: string): Promise<BrokerAccount> {
+    return this.prisma.brokerAccount.upsert({
+      where: { userId_broker: { userId, broker: 'MOCK' } },
+      create: { userId, broker: 'MOCK', status: 'CONNECTED', isPaper: true, mode: 'TRADING', lastConnectedAt: new Date() },
+      update: {},
+    });
+  }
+
   /** Hard guard used before every order: DATA_ONLY (master) accounts can never place orders. */
   assertOrderAllowed(account: Pick<BrokerAccount, 'mode' | 'id'>): void {
     if (account.mode === 'DATA_ONLY') throw new OrderBlockedError();

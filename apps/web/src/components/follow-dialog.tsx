@@ -50,7 +50,8 @@ export function FollowDialog({ s, onClose }: { s: StrategyWithSub | null; onClos
     if (!s || !valid) return void toast.error('Lot multiplier must be between 0.01 and 9.99');
     const sub = s.subscription;
     const body: FollowInput = {
-      brokerAccountId,
+      // No demat → server uses the internal paper account (paper trading).
+      ...(brokerAccountId ? { brokerAccountId } : {}),
       applyToOpenTrades: false,
       allocationMode: 'CAPITAL_PERCENTAGE',
       allocationPercent: Math.round(m * 10000) / 100,
@@ -68,7 +69,7 @@ export function FollowDialog({ s, onClose }: { s: StrategyWithSub | null; onClos
         onSuccess: (r) => {
           const isNew = !s.subscription;
           toast.success(isNew ? `Connected to ${s.name} — ${m}× lots` : `Saved — ${m}× lots`);
-          // New connection from the marketplace: start copying right away (needs a connected broker).
+          // New connection from the marketplace: start right away (paper needs no demat).
           if (isNew)
             toggle.mutate(
               { id: r.id, action: 'start' },
@@ -90,16 +91,17 @@ export function FollowDialog({ s, onClose }: { s: StrategyWithSub | null; onClos
           <DialogTitle>{s?.subscription ? s?.name : `Connect ${s?.name ?? ''}`}</DialogTitle>
           <DialogDescription>How many lots to trade for every strategy trade. Auto trading starts only when you press Start.</DialogDescription>
         </DialogHeader>
-        {accounts.data && accounts.data.length === 0 ? (
-          <p className="text-sm">
-            Connect your broker first on the{' '}
-            <Link className="underline" href="/broker">
-              Broker connection
-            </Link>{' '}
-            page.
-          </p>
-        ) : (
+        {(
           <form className="grid gap-4" onSubmit={save}>
+            {accounts.data && accounts.data.length === 0 ? (
+              <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                No demat connected — trades run in <strong className="text-foreground">Paper</strong> mode (simulated). Connect your broker on the{' '}
+                <Link className="underline" href="/broker">
+                  Broker connection
+                </Link>{' '}
+                page only when you want LIVE orders.
+              </p>
+            ) : null}
             {(accounts.data?.length ?? 0) > 1 ? (
               <div className="grid gap-1.5">
                 <Label htmlFor="fd-acc">Broker account</Label>
@@ -138,7 +140,7 @@ export function FollowDialog({ s, onClose }: { s: StrategyWithSub | null; onClos
               your broker / demat for them.
             </p>
             <DialogFooter>
-              <Button type="submit" disabled={follow.isPending || !brokerAccountId || !valid}>
+              <Button type="submit" disabled={follow.isPending || !valid}>
                 {follow.isPending ? 'Saving…' : s?.subscription ? 'Save' : 'Connect'}
               </Button>
             </DialogFooter>

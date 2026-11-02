@@ -231,7 +231,11 @@ export function ClientDashboard() {
             ) : (
               <>
                 <p className="text-muted-foreground">No broker connected yet.</p>
-                <Button asChild size="sm">
+                <p className="flex items-center gap-2 text-xs">
+                  <Badge tone="warn">PAPER</Badge> Paper trading works without a demat — strategy trades are simulated.
+                </p>
+                <p className="text-[11px] text-muted-foreground">Connect your demat only for LIVE (real) orders.</p>
+                <Button asChild size="sm" variant="outline">
                   <Link href="/broker-api">Set up Broker API</Link>
                 </Button>
               </>

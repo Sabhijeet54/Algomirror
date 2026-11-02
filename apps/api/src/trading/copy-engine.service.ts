@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import type Redis from 'ioredis';
 import { Prisma } from '@ctp/database';
-import type { BrokerAccount, BrokerName, MasterTrade, OrderStatus, PrismaClient, Strategy, StrategyFollower } from '@ctp/database';
+import type { BrokerAccount, BrokerName, Exchange, MasterTrade, OrderStatus, PrismaClient, ProductType, Strategy, StrategyFollower } from '@ctp/database';
 import { redact } from '@ctp/shared';
 import { RedisKeys, WsEvent } from '@ctp/types';
 import { AuditService } from '../audit/audit.service';
@@ -18,7 +18,7 @@ import { isMarketOpen, MarketFeedService } from '../market-data/market-feed.serv
 import { instrumentKey, PriceCacheService } from '../market-data/price-cache.service';
 import { NotifyService } from '../realtime/notify.service';
 import { RealtimeService } from '../realtime/realtime.gateway';
-import { OrderBlockedError, segmentOf, type BrokerOrder, type PlaceOrderInput } from './broker-adapter';
+import { OrderBlockedError, segmentOf, type BrokerAdapter, type BrokerOrder, type PlaceOrderInput } from './broker-adapter';
 import { ClientRegistryService, type ClientEntry } from './client-registry.service';
 import { computeCopyQuantity } from './copy-quantity';
 import { TradingService } from './trading.service';
@@ -99,6 +99,19 @@ export class LatencyStats {
 }
 
 const F = (v: Prisma.Decimal | null | undefined) => (v == null ? null : Number(v));
+/** Resolves to null on error or after `ms` (timer cleared either way). */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), ms);
+    p.then(
+      (v) => (clearTimeout(timer), resolve(v)),
+      () => (clearTimeout(timer), resolve(null)),
+    );
+  });
+}
+
+/** errorCode of a copy exit not sent because the client had already closed the position in his broker app. */
+export const CLOSED_AT_BROKER = 'CLOSED_AT_BROKER';
 const OK_STATUSES: OrderStatus[] = ['SUBMITTED', 'FILLED'];
 
 /**
@@ -272,8 +285,12 @@ export class CopyEngineService {
         .catch(() => null);
       if (pp && Math.sign(pp.quantity) !== Math.sign(x.signed)) (paperAccountId = pp.brokerAccountId), (paperQty = Math.abs(pp.quantity));
     }
+    // Paper exit: book it on the account that holds the paper position (it may be the internal paper account used
+    // before a demat was connected).
+    let heldOn: string | null = null;
+    if (x.closing && c.simulated) heldOn = await this.paperAccountFor(c.userId, x.t, c.accountId).catch(() => null);
     const sim = c.simulated || paperAccountId !== null;
-    const base = { followerId: c.followerId, userId: c.userId, accountId: paperAccountId ?? c.accountId, broker: c.broker, simulated: sim };
+    const base = { followerId: c.followerId, userId: c.userId, accountId: paperAccountId ?? heldOn ?? c.accountId, broker: c.broker, simulated: sim };
     const skip = (reason: string): CopyResult => ({ ...base, qty: 0, status: 'REJECTED', errorCode: 'SKIPPED', errorMessage: reason, attempts: 0 });
     const registry = this.registry!;
     const { t } = x;
@@ -322,6 +339,27 @@ export class CopyEngineService {
       if (bookQty) registry.applyClientFill(c.followerId, t.exchange, t.symbol, t.productType, t.side === 'BUY' ? bookQty : -bookQty);
       const latencyMs = Math.round(performance.now() - x.t0);
       return { ...base, qty, status: 'FILLED', fillPrice, latencyMs, attempts: 1 };
+    }
+
+    // LIVE exit: the client may already have squared off (part of) this position himself in his broker app.
+    // Send only what the broker still holds; the rest is booked as exited here (trade closes, no extra order —
+    // otherwise the SELL would open a short at the broker, or be rejected and leave the trade OPEN for ever).
+    if (x.closing && c.adapter) {
+      const send = await this.exitQtyHeldAtBroker(c.adapter, {
+        userId: c.userId,
+        accountId: c.accountId,
+        followerId: c.followerId,
+        exchange: t.exchange,
+        symbol: t.symbol,
+        productType: t.productType,
+        exitSide: t.side,
+        qty,
+        fallbackPrice: x.price,
+      });
+      if (send <= 0) {
+        return { ...base, qty, status: 'CANCELLED', errorCode: CLOSED_AT_BROKER, errorMessage: 'Already squared off by the client in the broker app — closed here too, no order sent.', attempts: 0 };
+      }
+      qty = send;
     }
 
     const input: PlaceOrderInput = {
@@ -558,6 +596,81 @@ export class CopyEngineService {
       });
     }
     this.realtime?.toUser(open[0]?.masterUserId ?? '', WsEvent.MASTER_TRADE_DETECTED, { symbol: t.symbol, side: t.side, signalClosed: true });
+  }
+
+  /**
+   * Before a LIVE exit: how much of `qty` the broker still holds for this contract. Whatever the client already
+   * closed himself (Kite / Angel / any broker app) is booked as an exit outside the platform — at the client's own
+   * fill price from the broker order book when visible, else the master's exit price — so the trade closes in the
+   * trade book / P&L and the copy engine's net position. Returns the quantity to actually send.
+   * Any doubt (broker not answering in time, an entry order of ours still pending) → returns `qty` unchanged.
+   */
+  async exitQtyHeldAtBroker(
+    adapter: BrokerAdapter,
+    p: { userId: string; accountId: string; followerId: string; exchange: Exchange; symbol: string; productType: ProductType; exitSide: 'BUY' | 'SELL'; qty: number; fallbackPrice: number | null },
+  ): Promise<number> {
+    const pendingEntry = await this.prisma.copyOrder
+      .count({
+        where: {
+          strategyFollowerId: p.followerId,
+          exchange: p.exchange,
+          symbol: p.symbol,
+          productType: p.productType,
+          mirrored: false,
+          createdAt: { gte: startOfTradingDayIST() },
+          status: { in: ['PENDING', 'SUBMITTED', 'OPEN', 'PARTIALLY_FILLED'] },
+        },
+      })
+      .catch(() => 1);
+    if (pendingEntry) return p.qty;
+    const positions = await withTimeout(adapter.positions(), 2_500);
+    if (!positions) return p.qty;
+    const net = positions.filter((x) => x.exchange === p.exchange && x.symbol === p.symbol && x.productType === p.productType).reduce((a, x) => a + x.quantity, 0);
+    // An exit SELL reduces a long (net > 0); an exit BUY covers a short (net < 0).
+    const held = p.exitSide === 'SELL' ? Math.max(0, net) : Math.max(0, -net);
+    if (held >= p.qty) return p.qty;
+    const gone = p.qty - held;
+    const signedReduce = p.exitSide === 'SELL' ? -gone : gone;
+    this.registry?.applyClientFill(p.followerId, p.exchange, p.symbol, p.productType, signedReduce);
+    void (async () => {
+      const book = (await withTimeout(adapter.orders(), 2_500)) ?? [];
+      const own = book
+        .filter((o) => o.exchange === p.exchange && o.symbol === p.symbol && o.side === p.exitSide && o.filledQuantity > 0 && o.averagePrice != null && !(o.tag ?? '').startsWith('ctp'))
+        .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+      const price = own[own.length - 1]?.averagePrice ?? p.fallbackPrice ?? this.prices?.get(instrumentKey(p.exchange, p.symbol)) ?? null;
+      await this.audit.log({
+        action: 'COPY_STOPPED',
+        targetType: 'BrokerAccount',
+        targetId: p.accountId,
+        metadata: {
+          manualExit: true,
+          source: 'BROKER_APP',
+          partial: true,
+          followerId: p.followerId,
+          followerAdjust: [{ followerId: p.followerId, qty: signedReduce }],
+          exchange: p.exchange,
+          symbol: p.symbol,
+          productType: p.productType,
+          side: p.exitSide,
+          quantity: gone,
+          price,
+        },
+      });
+      this.realtime?.toUser(p.userId, WsEvent.POSITION_UPDATED, { symbol: p.symbol, status: 'EXITED', quantity: gone, source: 'BROKER_APP' });
+    })().catch((err) => this.logger.warn(`Broker-app exit booking failed: ${(err as Error).message}`));
+    this.logger.log(`Follower ${p.followerId}: ${gone} ${p.symbol} already closed in the broker app — booked here, sending ${held}`);
+    return held;
+  }
+
+  /** Account holding the user's open PAPER position that an exit on `t.side` reduces (prefers `preferId`), or null. */
+  async paperAccountFor(userId: string, t: Pick<MasterTrade, 'exchange' | 'symbol' | 'productType' | 'side'>, preferId?: string | null): Promise<string | null> {
+    const rows = await this.prisma.position.findMany({
+      where: { userId, isPaper: true, exchange: t.exchange, symbol: t.symbol, productType: t.productType, quantity: t.side === 'BUY' ? { lt: 0 } : { gt: 0 } },
+      select: { brokerAccountId: true },
+      orderBy: { updatedAt: 'asc' },
+    });
+    if (!rows.length) return null;
+    return (rows.find((r) => r.brokerAccountId === preferId) ?? rows[0]!).brokerAccountId;
   }
 
   /** Paper bookkeeping: net position, average price and realized P&L. */

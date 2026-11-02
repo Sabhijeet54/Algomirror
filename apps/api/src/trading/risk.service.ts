@@ -184,10 +184,29 @@ export class RiskService implements OnApplicationBootstrap, OnModuleDestroy {
             const qty = Math.abs(p.qty);
             try {
               if (sim) {
-                await this.engine.applyPaperFill(s.followerUserId, s.brokerAccountId!, { ...p, side }, qty, this.prices.get(instrumentKey(p.exchange, p.symbol)) ?? 0);
+                const held = (await this.engine.paperAccountFor(s.followerUserId, { ...p, side }, s.brokerAccountId)) ?? s.brokerAccountId!;
+                await this.engine.applyPaperFill(s.followerUserId, held, { ...p, side }, qty, this.prices.get(instrumentKey(p.exchange, p.symbol)) ?? 0);
               } else if (adapter) {
                 this.trading.assertOrderAllowed(s.brokerAccount!);
-                await adapter.placeOrder({ exchange: p.exchange, symbol: p.symbol, side, quantity: qty, orderType: 'MARKET', productType: p.productType, tag: 'ctpexit' });
+                // Part / all of it may already be closed by the client in his broker app — that part is booked as
+                // exited (and taken off the net position) instead of sending an order for it.
+                const send = await this.engine.exitQtyHeldAtBroker(adapter, {
+                  userId: s.followerUserId,
+                  accountId: s.brokerAccountId!,
+                  followerId: s.id,
+                  exchange: p.exchange,
+                  symbol: p.symbol,
+                  productType: p.productType,
+                  exitSide: side,
+                  qty,
+                  fallbackPrice: this.prices.get(instrumentKey(p.exchange, p.symbol)) ?? null,
+                });
+                if (send <= 0) return;
+                await adapter.placeOrder({ exchange: p.exchange, symbol: p.symbol, side, quantity: send, orderType: 'MARKET', productType: p.productType, tag: 'ctpexit' });
+                this.registry.applyClientFill(s.id, p.exchange, p.symbol, p.productType, side === 'SELL' ? -send : send);
+                await this.logManualExit(s.brokerAccount!, p, side, send, this.prices.get(instrumentKey(p.exchange, p.symbol)) ?? null, null);
+                res.orders++;
+                return;
               } else return;
               this.registry.applyClientFill(s.id, p.exchange, p.symbol, p.productType, -p.qty);
               await this.logManualExit(s.brokerAccount!, p, side, qty, this.prices.get(instrumentKey(p.exchange, p.symbol)) ?? null, null);
@@ -260,7 +279,29 @@ export class RiskService implements OnApplicationBootstrap, OnModuleDestroy {
       const p = (await adapter.positions()).find(
         (x) => x.exchange === pos.exchange && x.symbol === pos.symbol && x.productType === pos.productType && x.quantity !== 0,
       );
-      if (!p) throw new BadRequestException('No open position for this symbol at the broker');
+      if (!p) {
+        // Not held at the broker any more (the client closed it in his broker app), but still OPEN here: book it
+        // as exited here too instead of failing, so the trade closes.
+        let booked = 0;
+        for (const fid of await this.followerIdsOf(account.id)) {
+          const net = this.registry.clientNet(fid, pos.exchange, pos.symbol, pos.productType);
+          if (!net) continue;
+          await this.engine.exitQtyHeldAtBroker(adapter, {
+            userId: account.userId,
+            accountId: account.id,
+            followerId: fid,
+            exchange: pos.exchange,
+            symbol: pos.symbol,
+            productType: pos.productType,
+            exitSide: net > 0 ? 'SELL' : 'BUY',
+            qty: Math.abs(net),
+            fallbackPrice: this.prices.get(key) ?? null,
+          });
+          booked += Math.abs(net) - Math.abs(this.registry.clientNet(fid, pos.exchange, pos.symbol, pos.productType));
+        }
+        if (!booked) throw new BadRequestException('No open position for this symbol at the broker');
+        return { orderId: null, quantity: booked };
+      }
       quantity = Math.abs(p.quantity);
       side = p.quantity > 0 ? 'SELL' : 'BUY';
       price = this.prices.get(key) ?? p.lastPrice;
