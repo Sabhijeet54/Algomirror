@@ -141,6 +141,10 @@ export class BrokersController {
   @Get('zerodha/connect')
   async zerodhaConnect(@CurrentUser() user: RequestUser): Promise<{ loginUrl: string }> {
     if (user.role !== 'FOLLOWER') throw new ForbiddenException('Zerodha is available for clients only — masters and admins use Angel One.');
+    // The client's OWN Kite app (saved in Broker API) — the same app the callback uses to finish the login.
+    // Logging in through the platform's app fails with "The user is not enabled for the app" for every client
+    // that is not registered on that app.
+    if (await this.apiConfigs.zerodhaClientFor(user.id).then(Boolean, () => false)) return this.apiConfigs.zerodhaLoginUrl(user.id);
     const client = this.sessions.zerodha();
     const state = await this.sessions.createState(user.id, 'ZERODHA');
     return { loginUrl: client.loginUrl(state) };
