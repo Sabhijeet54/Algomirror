@@ -3,7 +3,7 @@ import { Throttle } from '../../src/brokers/throttle';
 import { KiteTicker } from '../../src/market-data/kite-ticker';
 import { assertCanTrade, OrderBlockedError, segmentOf } from '../../src/trading/broker-adapter';
 import { computeCopyQuantity } from '../../src/trading/copy-quantity';
-import { ZerodhaAdapter } from '../../src/trading/zerodha.adapter';
+import { withMarketProtection, ZerodhaAdapter } from '../../src/trading/zerodha.adapter';
 
 const strat = { masterCapital: 1_000_000, maxOrderValue: null, maxQuantityPerOrder: null };
 const base = { allocationMode: 'CAPITAL_PERCENTAGE' as const, allocationPercent: null, allocationAmount: null, fixedQuantity: null, maxQuantity: null, maxTradeValue: null };
@@ -19,6 +19,17 @@ describe('data-only guard', () => {
   it('Zerodha adapter refuses orders on a DATA_ONLY account without any HTTP call', async () => {
     const a = new ZerodhaAdapter('k', 't', undefined, { dataOnly: true });
     await expect(a.placeOrder({ exchange: 'NSE', symbol: 'INFY', side: 'BUY', quantity: 1, orderType: 'MARKET', productType: 'INTRADAY' })).rejects.toThrow(OrderBlockedError);
+  });
+});
+
+describe('Zerodha market protection', () => {
+  it('sets automatic market protection (-1) on MARKET and SL-M orders', () => {
+    expect(withMarketProtection({}, 'MARKET').market_protection).toBe('-1');
+    expect(withMarketProtection({}, 'SL_M').market_protection).toBe('-1');
+  });
+  it('leaves LIMIT and SL orders unchanged', () => {
+    expect(withMarketProtection({}, 'LIMIT').market_protection).toBeUndefined();
+    expect(withMarketProtection({}, 'SL').market_protection).toBeUndefined();
   });
 });
 

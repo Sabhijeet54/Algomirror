@@ -41,6 +41,16 @@ interface Env<T> {
 }
 
 /** Kite Connect v3 REST adapter. */
+/**
+ * Kite rejects MARKET and SL-M orders placed via the API unless `market_protection` is set
+ * ("Market orders without market protection are not allowed via API").
+ * `-1` asks Kite to apply its automatic market protection (see Kite Connect docs, /orders).
+ */
+export function withMarketProtection(form: Record<string, string>, orderType: string): Record<string, string> {
+  if (orderType === 'MARKET' || orderType === 'SL_M') form.market_protection = '-1';
+  return form;
+}
+
 export class ZerodhaAdapter implements BrokerAdapter {
   readonly broker = 'ZERODHA';
   constructor(
@@ -81,6 +91,7 @@ export class ZerodhaAdapter implements BrokerAdapter {
     if (o.price != null && o.orderType !== 'MARKET' && o.orderType !== 'SL_M') form.price = String(o.price);
     if (o.triggerPrice != null && (o.orderType === 'SL' || o.orderType === 'SL_M')) form.trigger_price = String(o.triggerPrice);
     if (o.tag) form.tag = o.tag.slice(0, 20);
+    withMarketProtection(form, o.orderType);
     const d = await this.call<{ order_id: string }>('/orders/regular', 'POST', form);
     return { brokerOrderId: d.order_id };
   }
@@ -90,6 +101,7 @@ export class ZerodhaAdapter implements BrokerAdapter {
     const form: Record<string, string> = { order_type: TYPE_OUT[o.orderType], quantity: String(o.quantity), validity: 'DAY' };
     if (o.price != null && o.orderType !== 'MARKET' && o.orderType !== 'SL_M') form.price = String(o.price);
     if (o.triggerPrice != null && (o.orderType === 'SL' || o.orderType === 'SL_M')) form.trigger_price = String(o.triggerPrice);
+    withMarketProtection(form, o.orderType);
     await this.call(`/orders/regular/${encodeURIComponent(o.brokerOrderId)}`, 'PUT', form);
   }
 
