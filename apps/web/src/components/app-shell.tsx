@@ -80,6 +80,7 @@ const MENUS: Partial<Record<Role, NavSection[]>> = {
     {
       title: 'Configuration',
       items: [
+        { href: '/broker-api', label: 'Broker API', icon: KeyRound },
         { href: '/broker', label: 'Broker accounts', icon: Wallet },
         { href: '/master/sub-admins', label: 'Sub-admins', icon: UserCog },
         { href: '/settings', label: 'Profile & settings', icon: Settings },
@@ -220,7 +221,7 @@ export function AppShell({ user, children }: { user: AuthUser; children: React.R
   const [profileOpen, setProfileOpen] = useState(false);
   const quota = useMasterLicenceQuota(user.role === 'MASTER');
   const sections = (MENUS[user.role === 'SUB_ADMIN' ? 'ADMIN' : user.role] ?? []).map((sec) =>
-    isSubAdmin ? { ...sec, items: sec.items.filter((i) => i.href !== '/broker' && i.href !== '/master/sub-admins') } : sec,
+    isSubAdmin ? { ...sec, items: sec.items.filter((i) => i.href !== '/broker' && i.href !== '/broker-api' && i.href !== '/master/sub-admins') } : sec,
   );
   const workspaceLabel = user.role === 'ADMIN' ? 'Admin workspace' : user.role === 'SUB_ADMIN' ? 'Sub-admin workspace' : user.role === 'MASTER' ? (isSubAdmin ? 'Sub-admin · master workspace' : 'Master workspace') : 'Client workspace';
 

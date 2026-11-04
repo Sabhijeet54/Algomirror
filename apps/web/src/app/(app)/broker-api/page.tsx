@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { type BrokerApiConfigView, type BrokerSlug, type SaveBrokerApiConfigInput, useBrokerApiConfig, useBrokerApiMutations } from '@/lib/broker-api';
 import { formatDateTime } from '@/lib/format';
-import { useMyBrokerAccounts } from '@/lib/queries';
+import { useMe, useMyBrokerAccounts } from '@/lib/queries';
 import { cn } from '@/lib/utils';
 
 
@@ -509,17 +509,29 @@ function BrokerForm({ broker }: { broker: BrokerSlug }) {
 }
 
 export default function BrokerApiPage() {
+  const { data: me } = useMe();
+  // A master's broker is for live market data only, which comes from Angel One.
+  const isMaster = me?.role === 'MASTER';
+  const brokers = isMaster ? BROKERS.filter((b) => b.slug === 'angel-one') : BROKERS;
   const [tab, setTab] = useState<BrokerSlug>('angel-one');
   // /broker-api?broker=upstox opens that tab (e.g. from "Reconnect" on the broker card).
   useEffect(() => {
     const b = new URLSearchParams(window.location.search).get('broker') as BrokerSlug | null;
-    if (b && META[b]) setTab(b);
-  }, []);
+    if (b && META[b] && !isMaster) setTab(b);
+    if (isMaster) setTab('angel-one');
+  }, [isMaster]);
   return (
     <>
-      <PageHeader title="Broker API" description="Connect your own broker API app through your static IP — required for live auto trading." />
+      <PageHeader
+        title="Broker API"
+        description={
+          isMaster
+            ? 'Connect your own Angel One API app for live market data (it never places orders). Your keys are private to you.'
+            : 'Connect your own broker API app through your static IP — required for live auto trading.'
+        }
+      />
       <div className="mb-4 flex flex-wrap gap-1 rounded-lg border p-1" role="tablist" aria-label="Broker">
-        {BROKERS.map((b) => (
+        {brokers.map((b) => (
           <button
             key={b.slug}
             type="button"

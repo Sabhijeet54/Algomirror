@@ -53,6 +53,15 @@ export function BrokerAccountsSection({ user }: { user: AuthUser }) {
           </p>
         ) : (
           <div className="mt-4">
+          {user.role === 'MASTER' ? (
+            <p className="mb-3 rounded-md bg-muted/60 p-2 text-sm">
+              Use your <strong>own</strong> Angel One app: save its API key, PIN and TOTP in{' '}
+              <Link href="/broker-api" className="font-medium text-primary hover:underline">
+                Broker API
+              </Link>{' '}
+              and press Connect (auto-login every morning). Your keys are private — never shown to admin, other masters or clients.
+            </p>
+          ) : null}
           <p className="mb-2 text-xs text-muted-foreground">
             Broker sessions expire daily — log in again each trading day.
           </p>
