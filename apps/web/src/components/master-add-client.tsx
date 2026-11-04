@@ -70,7 +70,7 @@ export function AddClientDialog({ open, onOpenChange, onCreated }: { open: boole
                 <span />
               )}
             </div>
-            <p className="text-xs text-muted-foreground">Licences left: <strong>{quota.data?.remaining ?? '—'}</strong> (2 / 30 days use 1, demo is free).</p>
+            <p className="text-xs text-muted-foreground">Licences left: <strong>{quota.data?.remaining ?? '—'}</strong> (30 days / custom use 1 — demo and 2 days are free).</p>
             <p className="text-xs text-muted-foreground">After expiry the client cannot trade (paper or live) or connect a broker.</p>
           </div>
           <DialogFooter>

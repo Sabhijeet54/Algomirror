@@ -271,7 +271,7 @@ export function LicenceDialog({ user, onClose, scope = 'admin' }: { user: (Pick<
         </DialogHeader>
         <F id="lic-plan" label="Select licence">
           <LicencePicker id="lic-plan" plan={plan} custom={custom} onPlan={setPlan} onCustom={setCustom} allowDemo={user?.role !== 'MASTER'} allowCustom={scope === 'admin' || !!quota.data?.customAllowed} />
-          {scope === 'master' && quota.data ? <p className="text-xs text-muted-foreground">Licences left in your limit: <strong>{quota.data.remaining}</strong> (demo is free)</p> : null}
+          {scope === 'master' && quota.data ? <p className="text-xs text-muted-foreground">Licences left in your limit: <strong>{quota.data.remaining}</strong> (demo and 2 days are free)</p> : null}
           {plan === 'demo' ? <p className="text-xs text-muted-foreground">Demo: the client can only paper trade — switching to live is blocked.</p> : null}
           <p className="text-xs text-muted-foreground">The licence runs till 11:59 pm IST on its last day.</p>
         </F>
@@ -449,7 +449,7 @@ export function LicenceQuotaDialog({ user, onClose }: { user: Pick<AdminUserList
         <DialogHeader>
           <DialogTitle>Licence limit · {user?.name}</DialogTitle>
           <DialogDescription>
-            Licences this master can give to clients. Each 2-day / 30-day / custom licence uses 1 (demo is free). Now: <strong>{now}</strong> left.
+            Licences this master can give to clients. Each 30-day / custom licence uses 1 (demo and 2-day licences are free). Now: <strong>{now}</strong> left.
           </DialogDescription>
         </DialogHeader>
         <F id="lq-delta" label="Add (+) or remove (−) licences" hint={n ? `New limit: ${Math.max(0, now + n)}` : 'e.g. 10 or -5'}>

@@ -272,14 +272,15 @@ export class MasterController {
   }
 
   /**
-   * Licence limit set by the admin: a 2-day / 30-day / custom licence uses one licence from the master's quota
-   * (demo licences are free). Custom periods need the admin's permission.
+   * Licence limit set by the admin: a 30-day / custom licence uses one licence from the master's quota.
+   * Demo and 2-day (trial) licences are free — they never count against the limit. Custom periods need the
+   * admin's permission.
    */
   private async useLicence(user: RequestUser, days: number, demo: boolean): Promise<void> {
     const m = await this.prisma.user.findUnique({ where: { id: user.id }, select: { licenceQuota: true, licenceCustomAllowed: true } });
     if (!m) throw new NotFoundException('Master not found');
     if (!demo && days !== 2 && days !== 30 && !m.licenceCustomAllowed) throw new ForbiddenException('Custom licence period is not enabled for you — ask the admin.');
-    if (demo) return;
+    if (demo || days === 2) return; // demo and 2-day trial licences are free
     const r = await this.prisma.user.updateMany({ where: { id: user.id, licenceQuota: { gt: 0 } }, data: { licenceQuota: { decrement: 1 } } });
     if (!r.count) throw new BadRequestException('No licences left in your limit — ask the admin to add more.');
   }

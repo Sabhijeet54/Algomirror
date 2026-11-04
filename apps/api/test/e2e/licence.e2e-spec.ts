@@ -80,3 +80,21 @@ it('assign / extend / revoke: end-of-day expiry and full history for admin, mast
   expect(ch).toHaveLength(3);
   expect(ch.every((h: { by: unknown }) => h.by === null)).toBe(true); // who changed it is not shown to clients
 });
+
+it('master limit: demo and 2-day licences are free, 30-day uses one', async () => {
+  const hash = await hashPassword(PASSWORD);
+  const master = await prisma.user.create({ data: { email: email('m2'), name: 'E2E Master 2', role: 'MASTER', passwordHash: hash, emailVerifiedAt: new Date(), licenceQuota: 1 } });
+  const client = await prisma.user.create({ data: { email: email('c2'), name: 'E2E Client 2', role: 'FOLLOWER', passwordHash: hash, emailVerifiedAt: new Date(), parentUserId: master.id } });
+  const m = await login(master.email);
+  const left = async () => (await m.get('/master/licence-quota')).body.remaining;
+  expect((await m.post(`/master/clients/${client.id}/licence`).set(H).send({ days: 2 })).status).toBe(200);
+  expect(await left()).toBe(1);
+  expect((await m.post(`/master/clients/${client.id}/licence`).set(H).send({ days: 7, demo: true })).status).toBe(200);
+  expect(await left()).toBe(1);
+  expect((await m.post('/master/clients').set(H).send({ name: 'Trial', email: email('c3'), password: PASSWORD, licenceDays: 2 })).status).toBe(201);
+  expect(await left()).toBe(1);
+  expect((await m.post(`/master/clients/${client.id}/licence`).set(H).send({ days: 30 })).status).toBe(200);
+  expect(await left()).toBe(0);
+  expect((await m.post(`/master/clients/${client.id}/licence`).set(H).send({ days: 30 })).status).toBe(400);
+  expect((await m.post(`/master/clients/${client.id}/licence`).set(H).send({ days: 2 })).status).toBe(200); // still free at 0
+});
