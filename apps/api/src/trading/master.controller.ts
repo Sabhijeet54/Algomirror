@@ -25,7 +25,7 @@ import { startOfTradingDayIST } from '../admin/admin.service';
 import { ClientAssignService } from './client-assign.service';
 import { ClientRegistryService } from './client-registry.service';
 import { FNO_EXCHANGES, FnoCatalogService, type FnoExchange } from '../market-data/fno-catalog.service';
-import { clientDirectory } from './client-directory';
+import { clientDirectory, clientOwner } from './client-directory';
 import { allocationLabel, ClientSummaryService, isRemoved } from './client-summary.service';
 import { licenceStatus } from '../common/mappers';
 import { overlayLivePrices, paperPositionView } from './price-overlay';
@@ -173,7 +173,7 @@ export class MasterController {
   @Post('strategies/:id/assign')
   async assign(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: AssignClientDto) {
     const s = await this.own(user, id);
-    const { follower, warning, resized } = await this.assigner.assign(s, dto, user.id);
+    const { follower, warning, resized } = await this.assigner.assign(s, dto, user.id, { byMaster: true });
     return { follower: toStrategyFollowerView(follower), warning, resized };
   }
 
@@ -221,18 +221,17 @@ export class MasterController {
 
   /** Client picker for "Assign client": active client accounts (search by name / email / mobile). */
   @Get('client-directory')
-  clientDirectory(@Query('search') search?: string, @Query('strategyId') strategyId?: string) {
-    return clientDirectory(this.prisma, search, strategyId);
+  clientDirectory(@CurrentUser() user: RequestUser, @Query('search') search?: string, @Query('strategyId') strategyId?: string) {
+    return clientDirectory(this.prisma, search, strategyId, user.id);
   }
 
   // ------------------------------------------------------------ client licence & strategy access (by master)
 
-  /** The client must be (or have been) on one of my strategies. */
+  /** The client must be mine: created by me, or (no creator) first put on one of my strategies. */
   private async myClient(user: RequestUser, userId: string) {
     const u = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!u || u.role !== 'FOLLOWER') throw new NotFoundException('Client not found');
-    const link = u.parentUserId === user.id || (await this.prisma.strategyFollower.findFirst({ where: { followerUserId: userId, strategy: { masterUserId: user.id } }, select: { id: true } }));
-    if (!link) throw new ForbiddenException('This client is not one of your clients');
+    if ((await clientOwner(this.prisma, u)) !== user.id) throw new ForbiddenException('This client is not one of your clients');
     return u;
   }
 
@@ -336,7 +335,7 @@ export class MasterController {
   async clientAssign(@CurrentUser() user: RequestUser, @Param('userId') userId: string, @Param('strategyId') strategyId: string, @Body() dto: AssignStrategyDto) {
     const u = await this.myClient(user, userId);
     const s = await this.own(user, strategyId);
-    const { follower, warning, resized } = await this.assigner.assign(s, { ...dto, email: u.email }, user.actorId ?? user.id);
+    const { follower, warning, resized } = await this.assigner.assign(s, { ...dto, email: u.email }, user.actorId ?? user.id, { byMaster: true });
     return { follower: toStrategyFollowerView(follower), warning, resized };
   }
 

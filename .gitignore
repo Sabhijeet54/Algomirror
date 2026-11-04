@@ -25,3 +25,6 @@ npm-debug.log*
 
 # misc
 *.tar.gz
+
+# copies of files written by Claude (not part of the app)
+Claude outputs/

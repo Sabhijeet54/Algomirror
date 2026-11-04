@@ -93,6 +93,11 @@ export class MarketFeedService implements OnApplicationBootstrap, OnModuleDestro
 
   // ----------------------------------------------------------------- public
 
+  /** Status for masters: health only — no instrument list (other masters' contracts) and no account id. */
+  publicStatus(st: MarketFeedStatus = this.status()): MarketFeedStatus {
+    return { ...st, brokerAccountId: null, subscribed: [] };
+  }
+
   status(): MarketFeedStatus {
     const last = this.prices.lastTickAt;
     return {
@@ -201,15 +206,17 @@ export class MarketFeedService implements OnApplicationBootstrap, OnModuleDestro
         t.connect();
       } else {
         const extra = await this.sessions.decryptExtra(account);
-        if (!this.config.ANGEL_API_KEY || !extra.feedToken || !account.brokerClientId) {
+        // The master's own Angel app (his broker API settings) — else the platform's key.
+        const apiKey = extra.apiKey || this.config.ANGEL_API_KEY;
+        if (!apiKey || !extra.feedToken || !account.brokerClientId) {
           return this.setState('STOPPED', 'Angel feed token missing — reconnect the master Angel One account');
         }
         this.angelAdapter = new AngelOneAdapter(
-          { apiKey: this.config.ANGEL_API_KEY, publicIp: this.config.ANGEL_PUBLIC_IP, localIp: this.config.ANGEL_LOCAL_IP, macAddress: this.config.ANGEL_MAC_ADDRESS, proxyUrl: this.config.ANGEL_PROXY_URL },
+          { apiKey, publicIp: extra.publicIp || this.config.ANGEL_PUBLIC_IP, localIp: this.config.ANGEL_LOCAL_IP, macAddress: this.config.ANGEL_MAC_ADDRESS, proxyUrl: extra.proxyUrl || this.config.ANGEL_PROXY_URL },
           token,
           { dataOnly: true },
         );
-        const f = new AngelFeed(this.config.ANGEL_API_KEY, account.brokerClientId, extra.feedToken);
+        const f = new AngelFeed(apiKey, account.brokerClientId, extra.feedToken);
         this.angel = f;
         this.wire(f);
         f.on('tick', (exType: number, tok: string, ltp: number) => {
@@ -360,7 +367,7 @@ export class MarketFeedService implements OnApplicationBootstrap, OnModuleDestro
       void this.start(); // pick up a master that connected while we were stopped
     }
     const st = this.status();
-    this.realtime.toRole('MASTER', WsEvent.MARKET_FEED_STATUS, st);
+    this.realtime.toRole('MASTER', WsEvent.MARKET_FEED_STATUS, this.publicStatus(st));
     this.realtime.toRole('ADMIN', WsEvent.MARKET_FEED_STATUS, st);
     void this.redis.set(RedisKeys.feedStatus, JSON.stringify(st), 'EX', 60).catch(() => undefined);
   }
@@ -378,7 +385,7 @@ export class MarketFeedService implements OnApplicationBootstrap, OnModuleDestro
     }
     if (prev !== state) {
       const st = this.status();
-      this.realtime.toRole('MASTER', WsEvent.MARKET_FEED_STATUS, st);
+      this.realtime.toRole('MASTER', WsEvent.MARKET_FEED_STATUS, this.publicStatus(st));
       this.realtime.toRole('ADMIN', WsEvent.MARKET_FEED_STATUS, st);
     }
   }

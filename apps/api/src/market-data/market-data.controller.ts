@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post, Query } from '@nestjs/common';
 import { ArrayMaxSize, IsArray, IsIn, IsString, MaxLength } from 'class-validator';
 import type { MarketFeedStatus } from '@ctp/types';
-import { Roles } from '../common/decorators/auth.decorators';
+import { CurrentUser, type RequestUser, Roles } from '../common/decorators/auth.decorators';
 import { MarketFeedService } from './market-feed.service';
 import { PriceCacheService } from './price-cache.service';
 
@@ -38,27 +38,33 @@ export class MarketDataController {
     return out;
   }
 
+  /** The feed is shared by all masters: a master sees its health only, never what other masters watch. */
+  private view(user: RequestUser, st: MarketFeedStatus): MarketFeedStatus {
+    return user.role === 'MASTER' ? this.feed.publicStatus(st) : st;
+  }
+
   @Roles('MASTER', 'ADMIN', 'SUB_ADMIN')
   @Get('feed/status')
-  status(): MarketFeedStatus {
-    return this.feed.status();
+  status(@CurrentUser() user: RequestUser): MarketFeedStatus {
+    return this.view(user, this.feed.status());
   }
 
   @Roles('MASTER', 'ADMIN', 'SUB_ADMIN')
   @HttpCode(HttpStatus.OK)
   @Post('feed/restart')
-  restart(): Promise<MarketFeedStatus> {
-    return this.feed.restart();
+  async restart(@CurrentUser() user: RequestUser): Promise<MarketFeedStatus> {
+    return this.view(user, await this.feed.restart());
   }
 
-  @Roles('MASTER', 'ADMIN', 'SUB_ADMIN')
+  /** Shared feed controls: platform admin only (one master must not change another master's live data). */
+  @Roles('ADMIN', 'SUB_ADMIN')
   @HttpCode(HttpStatus.OK)
   @Post('feed/broker')
   broker(@Body() dto: FeedBrokerDto): Promise<MarketFeedStatus> {
     return this.feed.setPreferredBroker(dto.broker);
   }
 
-  @Roles('MASTER', 'ADMIN', 'SUB_ADMIN')
+  @Roles('ADMIN', 'SUB_ADMIN')
   @HttpCode(HttpStatus.OK)
   @Post('feed/subscribe')
   async subscribe(@Body() dto: FeedInstrumentsDto): Promise<MarketFeedStatus> {
@@ -66,7 +72,7 @@ export class MarketDataController {
     return this.feed.status();
   }
 
-  @Roles('MASTER', 'ADMIN', 'SUB_ADMIN')
+  @Roles('ADMIN', 'SUB_ADMIN')
   @HttpCode(HttpStatus.OK)
   @Post('feed/unsubscribe')
   async unsubscribe(@Body() dto: FeedInstrumentsDto): Promise<MarketFeedStatus> {

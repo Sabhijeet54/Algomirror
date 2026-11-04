@@ -5,6 +5,7 @@ import { PRISMA } from '../common/prisma/prisma.service';
 import { AccountEvents } from '../realtime/account-events';
 import type { AssignClientDto } from './trading.dto';
 import { PositionResizeService, type ResizeResult } from './position-resize.service';
+import { clientOwner } from './client-directory';
 import { isRemoved, REMOVED_REASON } from './follower-access';
 import { TradingService } from './trading.service';
 
@@ -23,12 +24,18 @@ export class ClientAssignService {
     private readonly trading: TradingService,
   ) {}
 
-  async assign(strategy: Strategy, dto: AssignClientDto, actorUserId: string) {
+  /** `byMaster`: the master himself assigns — only his own (or not yet owned) clients are allowed. */
+  async assign(strategy: Strategy, dto: AssignClientDto, actorUserId: string, opts: { byMaster?: boolean } = {}) {
     if (strategy.status === 'ARCHIVED') throw new BadRequestException('Strategy is archived');
     const client = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() } });
     if (!client) throw new NotFoundException(`No user with email ${dto.email}`);
     if (client.role !== 'FOLLOWER') throw new BadRequestException('Only client (follower) accounts can be assigned to a strategy');
+    // Multi-master: a client of another master can never be taken (no other master's client is even revealed).
+    const owner = await clientOwner(this.prisma, client);
+    if (opts.byMaster && owner && owner !== strategy.masterUserId) throw new NotFoundException(`No user with email ${dto.email}`);
     if (client.status !== 'ACTIVE') throw new BadRequestException('This client account is not active');
+    // A client nobody owns yet (self sign-up) becomes this master's client once assigned.
+    const claim = !client.parentUserId && (!owner || owner === strategy.masterUserId);
 
     const accounts = await this.prisma.brokerAccount.findMany({ where: { userId: client.id, mode: 'TRADING' }, orderBy: { createdAt: 'asc' } });
     const account = dto.brokerAccountId
@@ -72,6 +79,7 @@ export class ClientAssignService {
       update: data,
       include: { strategy: { select: { name: true } } },
     });
+    if (claim) await this.prisma.user.update({ where: { id: client.id }, data: { parentUserId: strategy.masterUserId } });
     await this.audit.log({
       action: 'PROFILE_UPDATED',
       actorUserId,

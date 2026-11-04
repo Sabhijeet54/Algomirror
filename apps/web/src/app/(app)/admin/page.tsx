@@ -147,7 +147,7 @@ export default function AdminOverviewPage() {
           <StatCard label="Avg copy latency (today)" value={latency.data?.dbTodayAvgMs != null ? `${latency.data.dbTodayAvgMs} ms` : '—'} hint={`${latency.data?.dbTodayCount ?? 0} live orders`} />
           <StatCard label="p95 latency" value={latency.data?.p95Ms != null ? `${latency.data.p95Ms} ms` : '—'} hint="Last 1000 orders (this server)" />
         </div>
-        <MarketFeedPanel showLatency={false} />
+        <MarketFeedPanel showLatency={false} admin />
       </div>
 
       <ReasonDialog

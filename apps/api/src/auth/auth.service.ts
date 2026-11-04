@@ -16,6 +16,7 @@ import { API_CONFIG, ApiConfig } from '../config/config.module';
 import { MailService } from '../notifications/mail.service';
 import { LoginDto, RegisterDto } from './dto/auth.dto';
 import { ClientInfo, IssuedTokens, TokenService } from './token.service';
+import { clientOwner } from '../trading/client-directory';
 
 const VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -231,9 +232,8 @@ export class AuthService implements OnApplicationBootstrap {
     if (!masterId) throw new ForbiddenException('Only a master can open a client panel');
     const target = await this.prisma.user.findUnique({ where: { id: clientId } });
     if (!target || target.role !== 'FOLLOWER') throw new ForbiddenException('Client not found');
-    const mine =
-      target.parentUserId === masterId ||
-      (await this.prisma.strategyFollower.count({ where: { followerUserId: clientId, strategy: { masterUserId: masterId } } })) > 0;
+    // Multi-master: only the client's own master (creator, or master of its first strategy) can open the panel.
+    const mine = (await clientOwner(this.prisma, target)) === masterId;
     if (!mine) throw new ForbiddenException('This client is not one of your clients');
     if (target.status !== 'ACTIVE') throw new ForbiddenException('This client account is disabled');
     const tokens = await this.tokens.issueForNewSession(target, client, actor.id);
