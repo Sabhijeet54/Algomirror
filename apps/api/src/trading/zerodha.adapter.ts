@@ -40,7 +40,6 @@ interface Env<T> {
   error_type?: string;
 }
 
-/** Kite Connect v3 REST adapter. */
 /**
  * Kite rejects MARKET and SL-M orders placed via the API unless `market_protection` is set
  * ("Market orders without market protection are not allowed via API").
@@ -51,6 +50,21 @@ export function withMarketProtection(form: Record<string, string>, orderType: st
   return form;
 }
 
+/** Kite rejects these orders when market protection is missing. */
+export const isMarketProtectionError = (err: unknown) => err instanceof Error && /market protection/i.test(err.message);
+
+/**
+ * Marketable LIMIT price around the LTP (what Kite suggests instead of a MARKET order): BUY a little above,
+ * SELL a little below, on the 0.05 tick — fills like a market order but never beyond this price.
+ */
+export function protectedLimitPrice(ltp: number, side: 'BUY' | 'SELL', pct = 3): number {
+  const tick = 0.05;
+  const buffer = Math.max((ltp * pct) / 100, 2 * tick);
+  const ticks = side === 'BUY' ? Math.ceil((ltp + buffer) / tick - 1e-9) : Math.floor((ltp - buffer) / tick + 1e-9);
+  return Math.max(tick, Number((ticks * tick).toFixed(2)));
+}
+
+/** Kite Connect v3 REST adapter. */
 export class ZerodhaAdapter implements BrokerAdapter {
   readonly broker = 'ZERODHA';
   constructor(
@@ -77,8 +91,26 @@ export class ZerodhaAdapter implements BrokerAdapter {
     return body.data as T;
   }
 
-  async placeOrder(o: PlaceOrderInput): Promise<{ brokerOrderId: string }> {
+  async placeOrder(input: PlaceOrderInput): Promise<{ brokerOrderId: string }> {
     assertCanTrade(this.opts);
+    let o = input;
+    // A LIMIT / SL without a real price (0 / empty) would be rejected — send it as MARKET / SL-M instead.
+    if (o.orderType === 'LIMIT' && !(Number(o.price) > 0)) o = { ...o, orderType: 'MARKET', price: null };
+    if (o.orderType === 'SL' && !(Number(o.price) > 0)) o = { ...o, orderType: 'SL_M', price: null };
+    try {
+      return await this.send(o);
+    } catch (err) {
+      // Kite: "Market orders without market protection are not allowed via API … or use a Limit order."
+      // Fall back to a marketable LIMIT (or SL) order priced around the live price.
+      if (!isMarketProtectionError(err) || (o.orderType !== 'MARKET' && o.orderType !== 'SL_M')) throw err;
+      // Reference: trigger for SL-M; else Kite LTP, or the price the platform sent along (LTP at signal time).
+      const ref = o.orderType === 'SL_M' ? Number(o.triggerPrice) : ((await this.ltp(o.exchange, o.symbol)) ?? Number(input.price));
+      if (!(ref > 0)) throw err;
+      return this.send({ ...o, orderType: o.orderType === 'SL_M' ? 'SL' : 'LIMIT', price: protectedLimitPrice(ref, o.side) });
+    }
+  }
+
+  private async send(o: PlaceOrderInput): Promise<{ brokerOrderId: string }> {
     const form: Record<string, string> = {
       tradingsymbol: await this.kiteSymbol(o.exchange, o.symbol),
       exchange: o.exchange,
