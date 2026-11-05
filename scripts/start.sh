@@ -25,6 +25,22 @@ echo "Angel redirect:    $ANGEL_REDIRECT_URL"
 
 npm run prisma:deploy
 
-exec npx concurrently -k -n api,web \
-  "PORT=4000 npm run start -w @ctp/api" \
-  "PORT=$WEB_PORT npm run start -w @ctp/web"
+# Start API + web as plain node processes. The old "npx concurrently" + "npm run start" wrappers kept four extra
+# npm/node processes alive (~260 MB) — together over 512 MB, so the instance ran out of memory and crashed.
+# Heap caps keep each process inside the plan's RAM (override with API_HEAP_MB / WEB_HEAP_MB).
+API_HEAP_MB="${API_HEAP_MB:-256}"
+WEB_HEAP_MB="${WEB_HEAP_MB:-160}"
+
+(cd apps/api && PORT=4000 exec node --max-old-space-size="$API_HEAP_MB" dist/main.js) &
+API_PID=$!
+(cd apps/web && PORT="$WEB_PORT" exec node --max-old-space-size="$WEB_HEAP_MB" ../../node_modules/next/dist/bin/next start --port "$WEB_PORT") &
+WEB_PID=$!
+
+stop() { kill "$API_PID" "$WEB_PID" 2>/dev/null; wait; }
+trap 'stop; exit 0' TERM INT
+
+# If either process dies, stop the other and exit non-zero so the host restarts the whole service.
+while kill -0 "$API_PID" 2>/dev/null && kill -0 "$WEB_PID" 2>/dev/null; do sleep 5; done
+echo "A process exited — restarting the service"
+stop
+exit 1

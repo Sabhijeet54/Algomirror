@@ -440,6 +440,16 @@ export interface MasterClientDetail {
 }
 export const useMasterClients = () =>
   useQuery({ queryKey: ['master', 'clients'], queryFn: () => api<MasterClientRow[]>('/master/clients'), refetchInterval: LIVE_MS });
+/** Master deletes one of his clients (history kept; login blocked; email freed). */
+export function useDeleteMasterClient() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => api<{ deleted: boolean }>(`/master/clients/${userId}/delete`, { method: 'POST' }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['master'] });
+    },
+  });
+}
 export const useMasterClient = (userId: string | null, range: HistoryRange) =>
   useQuery({
     queryKey: ['master', 'client-detail', userId, range],

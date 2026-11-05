@@ -151,6 +151,7 @@ export class AdminService {
 
   async listUsers(q: AdminUsersQueryDto): Promise<Paginated<AdminUserListItem>> {
     const where: Prisma.UserWhereInput = {
+      deletedAt: null, // clients deleted by their master are gone
       ...(q.role ? { role: q.role } : {}),
       ...(q.status ? { status: q.status } : {}),
       ...(q.broker ? { brokerAccounts: { some: { broker: q.broker } } } : {}),

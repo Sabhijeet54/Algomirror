@@ -206,6 +206,8 @@ model User {
   lastLoginAt     DateTime?
   disabledAt      DateTime?
   disabledReason  String?
+  /// Client deleted by its master: hidden everywhere and cannot log in; past trades stay for history.
+  deletedAt       DateTime?
   /// Optional Telegram chat id for personal alerts (order fill/fail, disconnect, loss limit).
   telegramChatId  String?
   /// Subscription licence: copy trading stops automatically after licenceExpiresAt (null = no licence assigned).

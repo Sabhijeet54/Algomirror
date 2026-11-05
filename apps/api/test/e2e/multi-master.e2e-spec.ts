@@ -97,3 +97,34 @@ it('masters only see and manage their own clients', async () => {
 
   await prisma.strategy.deleteMany({ where: { id: { in: [sA.id, sB.id] } } });
 });
+
+it('master deletes his own client: hidden, cannot log in, email reusable; other masters cannot delete it', async () => {
+  const hash = await hashPassword(PASSWORD);
+  const m1 = await prisma.user.create({ data: { email: email('del-m1'), name: 'E2E del m1', role: 'MASTER', passwordHash: hash, emailVerifiedAt: new Date(), licenceQuota: 5 } });
+  const m2 = await prisma.user.create({ data: { email: email('del-m2'), name: 'E2E del m2', role: 'MASTER', passwordHash: hash, emailVerifiedAt: new Date() } });
+  const cl = await prisma.user.create({ data: { email: email('del-client'), name: 'E2E del client', role: 'FOLLOWER', passwordHash: hash, emailVerifiedAt: new Date(), parentUserId: m1.id } });
+  const s1 = await prisma.strategy.create({ data: { masterUserId: m1.id, name: `E2E del ${RUN}`, masterCapital: 100000, status: 'ACTIVE' } });
+  const a1 = await login(m1.email);
+  const a2 = await login(m2.email);
+  expect((await a1.post(`/master/strategies/${s1.id}/assign`).set(H).send({ email: cl.email, allocationMode: 'FIXED_QUANTITY', fixedLots: 1 })).status).toBe(200);
+  const c = await login(cl.email);
+
+  expect((await a2.post(`/master/clients/${cl.id}/delete`).set(H)).status).toBe(403);
+  expect((await a1.post(`/master/clients/${cl.id}/delete`).set(H)).status).toBe(200);
+
+  const row = await prisma.user.findUnique({ where: { id: cl.id } });
+  expect(row?.deletedAt).toBeTruthy();
+  expect(row?.status).toBe('DISABLED');
+  expect((await prisma.strategyFollower.findFirst({ where: { followerUserId: cl.id } }))?.copyStatus).toBe('OFF');
+  expect(((await a1.get('/master/clients')).body as { userId: string }[]).map((x) => x.userId)).not.toContain(cl.id);
+  expect((await a1.get(`/master/clients/${cl.id}/licence-history`)).status).toBe(404);
+  expect((await c.get('/auth/me')).status).toBe(401); // old session revoked
+  expect((await request(app.getHttpServer()).post('/auth/login').set(H).send({ email: cl.email, password: PASSWORD })).status).not.toBe(200);
+
+  // The email is free again for a new client.
+  const re = await a1.post('/master/clients').set(H).send({ name: 'E2E del again', email: cl.email, password: PASSWORD });
+  expect(re.status).toBe(201);
+  await prisma.strategyFollower.deleteMany({ where: { strategyId: s1.id } });
+  await prisma.strategy.delete({ where: { id: s1.id } });
+  await prisma.user.delete({ where: { id: cl.id } });
+});

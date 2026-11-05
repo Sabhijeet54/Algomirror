@@ -1,6 +1,7 @@
 'use client';
 
-import { KeyRound, Layers, Search, UserPlus } from 'lucide-react';
+import { KeyRound, Layers, Search, Trash2, UserPlus } from 'lucide-react';
+import { toast } from 'sonner';
 import { AddClientDialog } from '@/components/master-add-client';
 import { LicenceDialog, UserStrategiesDialog } from '@/components/admin-user-dialogs';
 import Link from 'next/link';
@@ -10,10 +11,12 @@ import { PageHeader } from '@/components/page-header';
 import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { brokerLabel, formatDateTime } from '@/lib/format';
-import { type MasterClientRow, useMasterClients, useMasterLicenceQuota } from '@/lib/trading';
+import { useMe } from '@/lib/queries';
+import { type MasterClientRow, useDeleteMasterClient, useMasterClients, useMasterLicenceQuota } from '@/lib/trading';
 
 const LIC = { NONE: 'No licence', ACTIVE: 'Active', EXPIRING: 'Expiring', EXPIRED: 'Expired' } as const;
 const LIC_TONE = { NONE: 'text-muted-foreground', ACTIVE: 'text-success', EXPIRING: 'text-warning', EXPIRED: 'text-destructive' } as const;
@@ -24,6 +27,10 @@ export default function MasterClientsPage() {
   const [lic, setLic] = useState<MasterClientRow | null>(null);
   const [strat, setStrat] = useState<MasterClientRow | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [del, setDel] = useState<MasterClientRow | null>(null);
+  const me = useMe();
+  // A master's sub-admin cannot delete clients.
+  const canDelete = !(me.data as { isSubAdmin?: boolean } | undefined)?.isSubAdmin;
   const quota = useMasterLicenceQuota();
   const rows = (q.data ?? []).filter((c) => {
     const t = search.trim().toLowerCase();
@@ -135,6 +142,11 @@ export default function MasterClientsPage() {
                           <Button asChild size="sm" variant="outline" className="h-7 px-2 text-xs">
                             <Link href={`/master/client?id=${c.userId}`}>Details</Link>
                           </Button>
+                          {canDelete ? (
+                            <Button size="sm" variant="outline" className="h-7 px-2 text-xs text-destructive hover:text-destructive" title="Delete client" aria-label={`Delete ${c.name}`} onClick={() => setDel(c)}>
+                              <Trash2 />
+                            </Button>
+                          ) : null}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -152,6 +164,53 @@ export default function MasterClientsPage() {
       />
       <AddClientDialog open={addOpen} onOpenChange={setAddOpen} onCreated={(c) => setStrat({ userId: c.id, name: c.name, email: c.email } as MasterClientRow)} />
       <UserStrategiesDialog scope="master" user={strat ? { id: strat.userId, name: strat.name, email: strat.email } : null} onClose={() => setStrat(null)} />
+      <DeleteClientDialog client={del} onClose={() => setDel(null)} />
     </>
+  );
+}
+
+/** Confirm before deleting: copying stops, login is blocked, broker keys are wiped; trade history stays. */
+function DeleteClientDialog({ client, onClose }: { client: MasterClientRow | null; onClose: () => void }) {
+  const del = useDeleteMasterClient();
+  const copying = client?.subscriptions.some((s) => s.copyStatus === 'ON') ?? false;
+  return (
+    <Dialog open={!!client} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Delete {client?.name}?</DialogTitle>
+          <DialogDescription>{client?.email}</DialogDescription>
+        </DialogHeader>
+        <ul className="list-disc space-y-1 pl-5 text-sm">
+          <li>Removed from all your strategies — copy trading stops.</li>
+          <li>Logged out and can no longer log in. The email can be used again for a new client.</li>
+          <li>Broker disconnected and saved broker API keys deleted.</li>
+          <li>Past trades stay in your trade history.</li>
+        </ul>
+        <p className="rounded-md bg-destructive/10 p-2 text-sm text-destructive">
+          Open positions in the client&apos;s broker are <strong>not</strong> closed — exit them first.{copying ? ' This client is copying right now.' : ''} This cannot be undone.
+        </p>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={del.isPending}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={del.isPending || !client}
+            onClick={() =>
+              client &&
+              del.mutate(client.userId, {
+                onSuccess: () => {
+                  toast.success(`${client.name} deleted`);
+                  onClose();
+                },
+                onError: (e) => toast.error(e.message),
+              })
+            }
+          >
+            <Trash2 /> {del.isPending ? 'Deleting…' : 'Delete client'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

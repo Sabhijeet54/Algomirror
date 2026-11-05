@@ -26,7 +26,9 @@ import { ClientAssignService } from './client-assign.service';
 import { ClientRegistryService } from './client-registry.service';
 import { FNO_EXCHANGES, FnoCatalogService, type FnoExchange } from '../market-data/fno-catalog.service';
 import { clientDirectory, clientOwner } from './client-directory';
+import { BrokerSessionService } from '../brokers/broker-session.service';
 import { allocationLabel, ClientSummaryService, isRemoved } from './client-summary.service';
+import { REMOVED_REASON } from './follower-access';
 import { licenceStatus } from '../common/mappers';
 import { overlayLivePrices, paperPositionView } from './price-overlay';
 import { TradingService } from './trading.service';
@@ -52,6 +54,7 @@ export class MasterController {
     private readonly summary: ClientSummaryService,
     private readonly fno: FnoCatalogService,
     private readonly registry: ClientRegistryService,
+    private readonly sessions: BrokerSessionService,
   ) {}
 
   private async own(user: RequestUser, id: string): Promise<Strategy> {
@@ -230,7 +233,7 @@ export class MasterController {
   /** The client must be mine: created by me, or (no creator) first put on one of my strategies. */
   private async myClient(user: RequestUser, userId: string) {
     const u = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!u || u.role !== 'FOLLOWER') throw new NotFoundException('Client not found');
+    if (!u || u.role !== 'FOLLOWER' || u.deletedAt) throw new NotFoundException('Client not found');
     if ((await clientOwner(this.prisma, u)) !== user.id) throw new ForbiddenException('This client is not one of your clients');
     return u;
   }
@@ -348,6 +351,41 @@ export class MasterController {
     return toStrategyFollowerView(await this.assigner.unassign(strategyId, sub.id, user.actorId ?? user.id));
   }
 
+  /**
+   * Delete one of my clients: removed from all my strategies (copying stops), logged out everywhere, broker
+   * disconnected and its saved broker keys wiped, login blocked and the email freed for reuse. Past trades stay
+   * in trade history. Open positions in the client's broker are NOT closed — exit them first.
+   */
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('clients/:userId/delete')
+  async deleteClient(@CurrentUser() user: RequestUser, @Param('userId') userId: string, @Req() req: Request) {
+    if (user.actorId) throw new ForbiddenException('Only the master can delete a client');
+    const u = await this.myClient(user, userId);
+    const now = new Date();
+    const reason = 'Client deleted by master';
+    const accounts = await this.prisma.brokerAccount.findMany({ where: { userId, broker: { not: 'MOCK' }, status: { not: 'DISCONNECTED' } } });
+    for (const a of accounts) {
+      await this.sessions.disconnectAccount(a, { by: 'admin', reason, actorUserId: user.id, stopCopy: true }, clientInfo(req)).catch(() => undefined);
+    }
+    await this.prisma.$transaction([
+      this.prisma.strategyFollower.updateMany({
+        where: { followerUserId: userId },
+        data: { copyStatus: 'OFF', stoppedAt: now, stoppedReason: REMOVED_REASON, stoppedByUserId: user.id },
+      }),
+      this.prisma.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: now } }),
+      this.prisma.brokerApiConfig.deleteMany({ where: { userId } }),
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { deletedAt: now, status: 'DISABLED', disabledAt: now, disabledReason: reason, email: `deleted.${userId}@deleted.invalid`, mobile: null, telegramChatId: null },
+      }),
+    ]);
+    this.registry.scheduleReload(0);
+    this.accountEvents.emit({ type: 'settings', brokerAccountId: '', userId });
+    await this.audit.log({ action: 'PROFILE_UPDATED', actorUserId: user.id, targetType: 'User', targetId: userId, metadata: { clientDeleted: true, name: u.name, email: u.email }, client: clientInfo(req) });
+    return { deleted: true };
+  }
+
   // ------------------------------------------------------------ sub-admins (staff working for this master)
 
   private noSubAdmin(user: RequestUser) {
@@ -392,7 +430,7 @@ export class MasterController {
   @Get('clients')
   async clients(@CurrentUser() user: RequestUser) {
     const subs = await this.prisma.strategyFollower.findMany({
-      where: { strategy: { masterUserId: user.id } },
+      where: { strategy: { masterUserId: user.id }, follower: { deletedAt: null } },
       include: {
         strategy: { select: { name: true } },
         follower: { select: { id: true, name: true, email: true, mobile: true, status: true, licenceExpiresAt: true, licenceDays: true } },
@@ -404,7 +442,7 @@ export class MasterController {
     // A client stays in my list even after all strategies are removed (so they can be re-assigned),
     // and clients I created show up before any strategy is given to them.
     for (const s of subs) byUser.set(s.followerUserId, [...(byUser.get(s.followerUserId) ?? []), s]);
-    const own = await this.prisma.user.findMany({ where: { parentUserId: user.id, role: 'FOLLOWER' }, select: { id: true } });
+    const own = await this.prisma.user.findMany({ where: { parentUserId: user.id, role: 'FOLLOWER', deletedAt: null }, select: { id: true } });
     for (const o of own) if (!byUser.has(o.id)) byUser.set(o.id, []);
     const ids = [...byUser.keys()];
     const [users, accounts] = await Promise.all([
