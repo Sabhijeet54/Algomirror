@@ -32,7 +32,7 @@ import { REMOVED_REASON } from './follower-access';
 import { licenceStatus } from '../common/mappers';
 import { overlayLivePrices, paperPositionView } from './price-overlay';
 import { TradingService } from './trading.service';
-import { licenceExpiry, licenceHistory } from '../common/licence';
+import { emailTrialUsed, isTrialLicence, licenceExpiry, licenceHistory, trialUsed } from '../common/licence';
 
 /** Everything a master trader needs: strategies, followers, live account data and trade placement. */
 @Roles('MASTER')
@@ -243,6 +243,8 @@ export class MasterController {
   @Post('clients/:userId/licence')
   async clientLicence(@CurrentUser() user: RequestUser, @Param('userId') userId: string, @Body() dto: AssignLicenceDto, @Req() req: Request) {
     const u = await this.myClient(user, userId);
+    // The free trial (demo / 2 days) is given only once per client.
+    if (isTrialLicence(dto.days, dto.demo) && (await trialUsed(this.prisma, userId))) throw new BadRequestException('This client already had the free trial (demo / 2 days) once — give a 1-month or custom licence.');
     await this.useLicence(user, dto.days, !!dto.demo);
     const now = new Date();
     const running = u.licenceExpiresAt && u.licenceExpiresAt > now;
@@ -298,6 +300,7 @@ export class MasterController {
   @Post('clients')
   async createClient(@CurrentUser() user: RequestUser, @Body() dto: MasterClientCreateDto, @Req() req: Request) {
     if (await this.prisma.user.findUnique({ where: { email: dto.email } })) throw new BadRequestException('A user with this email already exists');
+    if (dto.licenceDays && isTrialLicence(dto.licenceDays, dto.demo) && (await emailTrialUsed(this.prisma, dto.email))) throw new BadRequestException('This client already had the free trial (demo / 2 days) once — give a 1-month or custom licence.');
     if (dto.licenceDays) await this.useLicence(user, dto.licenceDays, !!dto.demo);
     const now = new Date();
     const u = await this.prisma.user.create({

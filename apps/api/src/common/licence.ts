@@ -66,3 +66,27 @@ export async function licenceHistory(prisma: PrismaClient, userId: string): Prom
   }
   return out;
 }
+
+/** Free trial licence: demo (paper only, any days) or the 2-day licence. */
+export const isTrialLicence = (days: number | null | undefined, demo: boolean | undefined) => !!demo || days === 2;
+
+/** True once this user has ever been given a free trial (demo / 2 days) — a trial is given only once. */
+export async function trialUsed(prisma: PrismaClient, userId: string): Promise<boolean> {
+  return (await licenceHistory(prisma, userId)).some((h) => h.kind !== 'REVOKED' && isTrialLicence(h.days, h.demo));
+}
+
+/**
+ * A client deleted by the master and created again with the same email does not get a second trial:
+ * the deleted account's history (found through the delete audit entry) still counts.
+ */
+export async function emailTrialUsed(prisma: PrismaClient, email: string): Promise<boolean> {
+  const rows = await prisma.auditLog.findMany({
+    where: { targetType: 'User', action: 'PROFILE_UPDATED', metadata: { path: ['email'], equals: email.toLowerCase() } },
+    select: { targetId: true, metadata: true },
+    take: 20,
+  });
+  for (const r of rows) {
+    if ((r.metadata as { clientDeleted?: boolean } | null)?.clientDeleted && r.targetId && (await trialUsed(prisma, r.targetId))) return true;
+  }
+  return false;
+}

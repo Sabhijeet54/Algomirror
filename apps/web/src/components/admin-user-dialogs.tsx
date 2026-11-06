@@ -51,17 +51,17 @@ function useAssignableRoles(): RoleValue[] {
   return me?.role === 'ADMIN' ? ['FOLLOWER', 'MASTER', 'SUB_ADMIN', 'ADMIN'] : ['FOLLOWER', 'MASTER'];
 }
 
-function LicencePicker({ id, plan, custom, onPlan, onCustom, allowNone, allowDemo = true, allowCustom = true }: { id: string; plan: string; custom: string; onPlan: (v: string) => void; onCustom: (v: string) => void; allowNone?: boolean; allowDemo?: boolean; allowCustom?: boolean }) {
+function LicencePicker({ id, plan, custom, onPlan, onCustom, allowNone, allowDemo = true, allowCustom = true, allowTrial = true }: { id: string; plan: string; custom: string; onPlan: (v: string) => void; onCustom: (v: string) => void; allowNone?: boolean; allowDemo?: boolean; allowCustom?: boolean; allowTrial?: boolean }) {
   return (
     <div className="grid grid-cols-[1fr_auto] items-end gap-2">
       <Select id={id} value={plan} onChange={(e) => onPlan(e.target.value)}>
-        {LICENCE_PLANS.map((p) => (
+        {LICENCE_PLANS.filter((p) => allowTrial || p.value !== '2').map((p) => (
           <option key={p.value} value={p.value}>
             {p.label}
           </option>
         ))}
         {allowCustom ? <option value="custom">Custom period (days)…</option> : null}
-        {allowDemo ? <option value="demo">Demo — paper only (days)…</option> : null}
+        {allowDemo && allowTrial ? <option value="demo">Demo — paper only (days)…</option> : null}
         {allowNone ? <option value="none">No licence</option> : null}
       </Select>
       {plan === 'custom' || plan === 'demo' ? (
@@ -256,6 +256,14 @@ export function LicenceDialog({ user, onClose, scope = 'admin' }: { user: (Pick<
       setExtend(true);
     }
   }, [user]);
+  // The free trial (demo / 2 days) is given only once per client — a master cannot give it again.
+  const trialUsed = scope === 'master' && !!history.data?.some((h) => h.kind !== 'REVOKED' && (h.demo || h.days === 2));
+  useEffect(() => {
+    if (trialUsed && (plan === '2' || plan === 'demo')) {
+      setPlan('30');
+      setCustom('');
+    }
+  }, [trialUsed, plan]);
   const days = planDays(plan, custom) ?? 0;
   const running = user?.licenceExpiresAt && new Date(user.licenceExpiresAt).getTime() > Date.now();
   return (
@@ -270,7 +278,8 @@ export function LicenceDialog({ user, onClose, scope = 'admin' }: { user: (Pick<
           </DialogDescription>
         </DialogHeader>
         <F id="lic-plan" label="Select licence">
-          <LicencePicker id="lic-plan" plan={plan} custom={custom} onPlan={setPlan} onCustom={setCustom} allowDemo={user?.role !== 'MASTER'} allowCustom={scope === 'admin' || !!quota.data?.customAllowed} />
+          <LicencePicker id="lic-plan" plan={plan} custom={custom} onPlan={setPlan} onCustom={setCustom} allowDemo={user?.role !== 'MASTER'} allowCustom={scope === 'admin' || !!quota.data?.customAllowed} allowTrial={!trialUsed} />
+          {trialUsed ? <p className="text-xs text-warning">Free trial (demo / 2 days) already given to this client once — only paid licences now.</p> : null}
           {scope === 'master' && quota.data ? <p className="text-xs text-muted-foreground">Licences left in your limit: <strong>{quota.data.remaining}</strong> (demo and 2 days are free)</p> : null}
           {plan === 'demo' ? <p className="text-xs text-muted-foreground">Demo: the client can only paper trade — switching to live is blocked.</p> : null}
           <p className="text-xs text-muted-foreground">The licence runs till 11:59 pm IST on its last day.</p>

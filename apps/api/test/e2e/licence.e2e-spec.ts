@@ -89,12 +89,36 @@ it('master limit: demo and 2-day licences are free, 30-day uses one', async () =
   const left = async () => (await m.get('/master/licence-quota')).body.remaining;
   expect((await m.post(`/master/clients/${client.id}/licence`).set(H).send({ days: 2 })).status).toBe(200);
   expect(await left()).toBe(1);
-  expect((await m.post(`/master/clients/${client.id}/licence`).set(H).send({ days: 7, demo: true })).status).toBe(200);
+  const demoClient = await prisma.user.create({ data: { email: email('c2demo'), name: 'E2E Client demo', role: 'FOLLOWER', passwordHash: hash, emailVerifiedAt: new Date(), parentUserId: master.id } });
+  expect((await m.post(`/master/clients/${demoClient.id}/licence`).set(H).send({ days: 7, demo: true })).status).toBe(200);
   expect(await left()).toBe(1);
   expect((await m.post('/master/clients').set(H).send({ name: 'Trial', email: email('c3'), password: PASSWORD, licenceDays: 2 })).status).toBe(201);
   expect(await left()).toBe(1);
   expect((await m.post(`/master/clients/${client.id}/licence`).set(H).send({ days: 30 })).status).toBe(200);
   expect(await left()).toBe(0);
   expect((await m.post(`/master/clients/${client.id}/licence`).set(H).send({ days: 30 })).status).toBe(400);
-  expect((await m.post(`/master/clients/${client.id}/licence`).set(H).send({ days: 2 })).status).toBe(200); // still free at 0
+  const freeClient = await prisma.user.create({ data: { email: email('c2free'), name: 'E2E Client free', role: 'FOLLOWER', passwordHash: hash, emailVerifiedAt: new Date(), parentUserId: master.id } });
+  expect((await m.post(`/master/clients/${freeClient.id}/licence`).set(H).send({ days: 2 })).status).toBe(200); // still free at 0
+});
+
+it('free trial (demo / 2 days) is given only once per client, even after delete + re-create', async () => {
+  const hash = await hashPassword(PASSWORD);
+  const master = await prisma.user.create({ data: { email: email('trial-master'), name: 'E2E trial master', role: 'MASTER', passwordHash: hash, emailVerifiedAt: new Date(), licenceQuota: 5 } });
+  const client = await prisma.user.create({ data: { email: email('trial-client'), name: 'E2E trial client', role: 'FOLLOWER', passwordHash: hash, emailVerifiedAt: new Date(), parentUserId: master.id } });
+  const m = await login(master.email);
+  const give = (body: object) => m.post(`/master/clients/${client.id}/licence`).set(H).send(body);
+
+  expect((await give({ days: 2 })).status).toBe(200);
+  const again = await give({ days: 2 });
+  expect(again.status).toBe(400);
+  expect(again.body.message).toMatch(/free trial/i);
+  expect((await give({ days: 5, demo: true })).status).toBe(400);
+  expect((await give({ days: 30 })).status).toBe(200); // paid licence still allowed
+
+  // Delete and create again with the same email: still no second trial.
+  expect((await m.post(`/master/clients/${client.id}/delete`).set(H)).status).toBe(200);
+  const re = await m.post('/master/clients').set(H).send({ name: 'E2E trial again', email: client.email, password: PASSWORD, licenceDays: 2 });
+  expect(re.status).toBe(400);
+  expect((await m.post('/master/clients').set(H).send({ name: 'E2E trial again', email: client.email, password: PASSWORD })).status).toBe(201);
+  await prisma.user.delete({ where: { id: client.id } });
 });
