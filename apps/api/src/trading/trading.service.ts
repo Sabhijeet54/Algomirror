@@ -112,6 +112,7 @@ export class TradingService implements OnModuleInit {
     if (err.brokerCode === 'DH-901') return true; // Dhan: invalid / expired access token
     if (err.brokerCode && /^-(8|15|16|17)$/.test(err.brokerCode)) return true; // Fyers token errors
     if (err.brokerCode === 'UDAPI100050') return true; // Upstox invalid token
+    if (err.brokerCode === 'TOKEN_EXPIRED') return true; // Alice Blue / Groww / Motilal: adapter mapped a session error
     return /invalid token|token expired|invalid jwt|invalid session|session expired|incorrect `api_key` or `access_token`/i.test(msg);
   }
 

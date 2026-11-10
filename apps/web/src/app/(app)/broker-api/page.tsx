@@ -81,7 +81,7 @@ function F({
   );
 }
 
-type FieldKey = 'clientCode' | 'apiKey' | 'apiSecret' | 'pin' | 'totpSecret' | 'mobile' | 'userId';
+type FieldKey = 'clientCode' | 'apiKey' | 'apiSecret' | 'pin' | 'totpSecret' | 'mobile' | 'userId' | 'password' | 'twoFa';
 interface FieldMeta {
   key: FieldKey;
   label: string;
@@ -217,6 +217,41 @@ const BROKERS: BrokerMeta[] = [
     daily: 'Alice Blue sessions end daily. With auto-login ON we reconnect you each morning (you may need to log in once on the Alice Blue app/web that day).',
   },
   {
+    slug: 'groww',
+    broker: 'GROWW',
+    name: 'Groww',
+    fields: [
+      { key: 'clientCode', label: 'Groww Client ID (UCC)', required: true, hint: 'Groww app → Profile → your client ID' },
+      { key: 'apiKey', label: 'API Key (TOTP type)', required: true, secret: true, hint: 'groww.in/trade-api/api-keys → Generate API key → choose TOTP' },
+      { key: 'totpSecret', label: 'TOTP secret', required: true, secret: true, hint: 'Shown with the QR code when you create the TOTP API key' },
+    ],
+    steps: (ip) => [
+      <>Subscribe to <strong>Groww Trade API</strong>, then open <strong>groww.in/trade-api/api-keys</strong> → Generate API key → <strong>TOTP</strong>. Whitelist static IP <code>{ip}</code>.</>,
+      <>Copy the <strong>API Key</strong> and the <strong>TOTP secret</strong> shown under the QR code.</>,
+    ],
+    autoLogin: 'Auto-login every trading morning with my Groww API key + TOTP.',
+    daily: 'Groww tokens expire every day at 6:00 AM. With auto-login ON we reconnect you each morning; otherwise press Connect Broker before 9:15 AM.',
+  },
+  {
+    slug: 'motilal-oswal',
+    broker: 'MOTILAL_OSWAL',
+    name: 'Motilal Oswal',
+    fields: [
+      { key: 'clientCode', label: 'User ID (client code)', required: true },
+      { key: 'apiKey', label: 'API Key', required: true, secret: true, hint: 'invest.motilaloswal.com → Trading API → API key' },
+      { key: 'apiSecret', label: 'API Secret Key (if shown)', secret: true },
+      { key: 'password', label: 'Login password', required: true, secret: true },
+      { key: 'twoFa', label: 'Date of birth (DD/MM/YYYY) or PAN', required: true, secret: true, hint: 'Second factor Motilal asks for at login' },
+      { key: 'totpSecret', label: 'TOTP secret', required: true, secret: true, hint: 'Enable authenticator TOTP and copy the key under the QR code' },
+    ],
+    steps: (ip) => [
+      <>Log in to <strong>invest.motilaloswal.com</strong> → Trading API → create your <strong>API Key</strong>. Register static IP <code>{ip}</code>.</>,
+      <>Enable <strong>authenticator TOTP</strong> for your login and copy the secret key shown under the QR code.</>,
+    ],
+    autoLogin: 'Auto-login every trading morning with my password + TOTP.',
+    daily: 'Motilal Oswal sessions end at 6:00 AM daily. With auto-login ON we reconnect you each morning; otherwise press Connect Broker before 9:15 AM.',
+  },
+  {
     slug: 'upstox',
     broker: 'UPSTOX',
     name: 'Upstox',
@@ -277,7 +312,7 @@ function SetupSteps({ meta, cfg }: { meta: BrokerMeta; cfg?: BrokerApiConfigView
   );
 }
 
-const BLANK = { clientCode: '', apiKey: '', apiSecret: '', pin: '', totpSecret: '', mobile: '', userId: '', proxyHost: '', proxyPort: '', proxyUser: '', proxyPass: '' };
+const BLANK = { clientCode: '', apiKey: '', apiSecret: '', pin: '', totpSecret: '', mobile: '', userId: '', password: '', twoFa: '', proxyHost: '', proxyPort: '', proxyUser: '', proxyPass: '' };
 type Form = typeof BLANK;
 
 function BrokerForm({ broker }: { broker: BrokerSlug }) {
@@ -320,7 +355,7 @@ function BrokerForm({ broker }: { broker: BrokerSlug }) {
     for (const fld of meta.fields) if (fld.key !== 'clientCode') (body as Record<string, unknown>)[fld.key] = f[fld.key];
     save.mutate(body, {
       onSuccess: (v) => {
-        setF((p) => ({ ...p, apiKey: '', apiSecret: '', pin: '', totpSecret: '', mobile: '', userId: '', proxyUser: '', proxyPass: '' }));
+        setF((p) => ({ ...p, apiKey: '', apiSecret: '', pin: '', totpSecret: '', mobile: '', userId: '', password: '', twoFa: '', proxyUser: '', proxyPass: '' }));
         toast.success(v.complete ? 'Saved — now test proxy health and connect' : `Saved. Still missing: ${v.missing.map(labelOf).join(', ')}`);
       },
       onError: (e) => toast.error(e.message),

@@ -10,6 +10,8 @@ import { FYERS_API_ROOT, FyersAdapter } from './fyers.adapter';
 import { KOTAK_LOGIN_ROOT, KotakNeoAdapter } from './kotak.adapter';
 import { FIVEPAISA_API_ROOT, FivePaisaAdapter } from './fivepaisa.adapter';
 import { ALICEBLUE_API_ROOT, AliceBlueAdapter } from './aliceblue.adapter';
+import { GROWW_API_ROOT, GrowwAdapter } from './groww.adapter';
+import { MOTILAL_API_ROOT, MotilalAdapter } from './motilal.adapter';
 
 /**
  * Broker adapter registry. To add a broker (Upstox / Dhan / Fyers):
@@ -113,6 +115,31 @@ export const ADAPTERS: Partial<Record<BrokerName, AdapterFactory>> = {
       const e = o?.extra ?? {};
       if (!e.clientCode) throw new BrokerApiError('Alice Blue session is incomplete — please reconnect.');
       return new AliceBlueAdapter(e.clientCode, token, o?.proxyUrl, { dataOnly: a.mode === 'DATA_ONLY' });
+    },
+  },
+  GROWW: {
+    origin: GROWW_API_ROOT,
+    create: (_c, token, a, o) => new GrowwAdapter(token, o?.proxyUrl, { dataOnly: a.mode === 'DATA_ONLY' }),
+  },
+  MOTILAL_OSWAL: {
+    origin: MOTILAL_API_ROOT,
+    create: (c, token, a, o) => {
+      const e = o?.extra ?? {};
+      if (!o?.apiKey || !e.clientCode) throw new BrokerApiError('Motilal Oswal session is incomplete — please reconnect.');
+      return new MotilalAdapter(
+        {
+          apiKey: o.apiKey,
+          apiSecret: e.apiSecret,
+          clientCode: e.clientCode,
+          accessToken: e.accessToken,
+          publicIp: o.publicIp,
+          localIp: e.localIp ?? c.ANGEL_LOCAL_IP,
+          macAddress: e.macAddress ?? c.ANGEL_MAC_ADDRESS,
+          proxyUrl: o.proxyUrl,
+        },
+        token,
+        { dataOnly: a.mode === 'DATA_ONLY' },
+      );
     },
   },
 };

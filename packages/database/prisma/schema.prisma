@@ -39,6 +39,8 @@ enum BrokerName {
   KOTAK_NEO
   FIVE_PAISA
   ALICE_BLUE
+  GROWW
+  MOTILAL_OSWAL
   MOCK
 }
 

@@ -4,11 +4,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
 import { qk } from './queries';
 
-export type BrokerSlug = 'angel-one' | 'zerodha' | 'upstox' | 'dhan' | 'fyers' | 'kotak-neo' | '5paisa' | 'alice-blue';
-type SecretKey = 'apiKey' | 'apiSecret' | 'pin' | 'totpSecret' | 'proxyUser' | 'proxyPass' | 'mobile' | 'userId';
+export type BrokerSlug = 'angel-one' | 'zerodha' | 'upstox' | 'dhan' | 'fyers' | 'kotak-neo' | '5paisa' | 'alice-blue' | 'groww' | 'motilal-oswal';
+type SecretKey = 'apiKey' | 'apiSecret' | 'pin' | 'totpSecret' | 'proxyUser' | 'proxyPass' | 'mobile' | 'userId' | 'password' | 'twoFa';
 
 export interface BrokerApiConfigView {
-  broker: 'ANGEL_ONE' | 'ZERODHA' | 'UPSTOX' | 'DHAN' | 'FYERS' | 'KOTAK_NEO' | 'FIVE_PAISA' | 'ALICE_BLUE';
+  broker: 'ANGEL_ONE' | 'ZERODHA' | 'UPSTOX' | 'DHAN' | 'FYERS' | 'KOTAK_NEO' | 'FIVE_PAISA' | 'ALICE_BLUE' | 'GROWW' | 'MOTILAL_OSWAL';
   clientCode: string | null;
   proxyHost: string | null;
   proxyPort: number | null;
@@ -35,6 +35,8 @@ export interface SaveBrokerApiConfigInput {
   proxyPass?: string;
   mobile?: string;
   userId?: string;
+  password?: string;
+  twoFa?: string;
   autoLogin?: boolean;
   consent?: boolean;
 }

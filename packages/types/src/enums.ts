@@ -27,6 +27,8 @@ export const BrokerName = {
   KOTAK_NEO: 'KOTAK_NEO',
   FIVE_PAISA: 'FIVE_PAISA',
   ALICE_BLUE: 'ALICE_BLUE',
+  GROWW: 'GROWW',
+  MOTILAL_OSWAL: 'MOTILAL_OSWAL',
   MOCK: 'MOCK',
 } as const;
 export type BrokerName = (typeof BrokerName)[keyof typeof BrokerName];

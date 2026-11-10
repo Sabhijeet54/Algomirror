@@ -47,7 +47,7 @@ export default function Home() {
             Mirror a master trader’s executions into your own broker account.
           </h1>
           <p className="mt-5 max-w-2xl text-lg text-muted-foreground text-pretty">
-            Connect your broker (Angel One, Upstox, Dhan, Fyers, Kotak Neo, 5paisa, Alice Blue), choose a strategy, set your allocation and risk limits, and switch auto trading on
+            Connect your broker (Angel One, Upstox, Dhan, Fyers, Kotak Neo, 5paisa, Alice Blue, Groww, Motilal Oswal), choose a strategy, set your allocation and risk limits, and switch auto trading on
             when you are ready. You stay in control — trading never starts on its own.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">

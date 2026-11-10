@@ -53,7 +53,7 @@ export function BrokerAccountCard({ account: a }: { account: BrokerAccountView }
       if (available.data?.angelOnePublisherLogin) start.mutate('angel-one', { onError: (e) => toast.error(e.message) });
       else setAngelOpen(true);
     } else {
-      const slug = ({ UPSTOX: 'upstox', DHAN: 'dhan', FYERS: 'fyers', KOTAK_NEO: 'kotak-neo', FIVE_PAISA: '5paisa', ALICE_BLUE: 'alice-blue' } as Record<string, string>)[a.broker];
+      const slug = ({ UPSTOX: 'upstox', DHAN: 'dhan', FYERS: 'fyers', KOTAK_NEO: 'kotak-neo', FIVE_PAISA: '5paisa', ALICE_BLUE: 'alice-blue', GROWW: 'groww', MOTILAL_OSWAL: 'motilal-oswal' } as Record<string, string>)[a.broker];
       if (slug) window.location.href = `/broker-api?broker=${slug}`;
     }
   };

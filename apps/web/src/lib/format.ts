@@ -50,6 +50,10 @@ export function brokerLabel(broker: string): string {
       return '5paisa';
     case 'ALICE_BLUE':
       return 'Alice Blue';
+    case 'GROWW':
+      return 'Groww';
+    case 'MOTILAL_OSWAL':
+      return 'Motilal Oswal';
     case 'MOCK':
       return 'Paper (Mock)';
     default:

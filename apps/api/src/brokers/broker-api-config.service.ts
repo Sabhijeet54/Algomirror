@@ -14,6 +14,8 @@ import { FyersClient } from '../trading/fyers.adapter';
 import { KotakNeoClient } from '../trading/kotak.adapter';
 import { FivePaisaClient } from '../trading/fivepaisa.adapter';
 import { AliceBlueClient } from '../trading/aliceblue.adapter';
+import { GrowwClient } from '../trading/groww.adapter';
+import { MotilalClient } from '../trading/motilal.adapter';
 
 /** Secrets kept encrypted; never sent back to the browser. */
 interface Secrets {
@@ -27,15 +29,19 @@ interface Secrets {
   mobile?: string;
   /** 5paisa: API "User ID" from the Xtream dashboard. */
   userId?: string;
+  /** Motilal Oswal: login password (hashed with the API key at login). */
+  password?: string;
+  /** Motilal Oswal: second factor — date of birth (DD/MM/YYYY) or PAN. */
+  twoFa?: string;
 }
-const SECRET_KEYS: (keyof Secrets)[] = ['apiKey', 'apiSecret', 'pin', 'totpSecret', 'proxyUser', 'proxyPass', 'mobile', 'userId'];
+const SECRET_KEYS: (keyof Secrets)[] = ['apiKey', 'apiSecret', 'pin', 'totpSecret', 'proxyUser', 'proxyPass', 'mobile', 'userId', 'password', 'twoFa'];
 /** Internal (never shown, never typed by the client): Fyers refresh token for the daily PIN refresh. */
 interface StoredSecrets extends Secrets {
   refreshToken?: string;
 }
 
 /** Brokers that log in server-side every trading morning (no browser): TOTP / PIN, or Fyers refresh token + PIN. */
-const AUTO_LOGIN_BROKERS: BrokerName[] = ['ANGEL_ONE', 'DHAN', 'KOTAK_NEO', 'FIVE_PAISA', 'FYERS', 'ALICE_BLUE'];
+const AUTO_LOGIN_BROKERS: BrokerName[] = ['ANGEL_ONE', 'DHAN', 'KOTAK_NEO', 'FIVE_PAISA', 'FYERS', 'ALICE_BLUE', 'GROWW', 'MOTILAL_OSWAL'];
 
 /** Next occurrence of hh:mm IST (today if still ahead, else tomorrow). */
 function nextIst(hh: number, mm: number, now = new Date()): Date {
@@ -128,6 +134,10 @@ export class BrokerApiConfigService implements OnApplicationBootstrap, OnModuleD
         return ['clientCode', 'apiKey', 'apiSecret', 'userId', 'pin', 'totpSecret', ...proxy];
       case 'ALICE_BLUE':
         return ['clientCode', 'apiKey', ...proxy];
+      case 'GROWW':
+        return ['clientCode', 'apiKey', 'totpSecret', ...proxy];
+      case 'MOTILAL_OSWAL':
+        return ['clientCode', 'apiKey', 'password', 'twoFa', 'totpSecret', ...proxy];
       default: // ZERODHA, UPSTOX, FYERS: own app key + secret, browser login
         return ['apiKey', 'apiSecret', ...proxy];
     }
@@ -459,6 +469,43 @@ export class BrokerApiConfigService implements OnApplicationBootstrap, OnModuleD
     );
   }
 
+  /** Groww: TOTP-type API key + TOTP → access token (expires 6:00 AM). */
+  connectGroww(userId: string, client?: ClientInfo) {
+    return this.login(
+      userId,
+      'GROWW',
+      [],
+      async (row, s, proxyUrl) => {
+        const r = await new GrowwClient(proxyUrl).loginWithTotp(s.apiKey!, totp(s.totpSecret!));
+        const code = row.clientCode!.toUpperCase();
+        return { brokerClientId: code, accessToken: r.accessToken, extra: { clientCode: code, proxyUrl }, expiresAt: r.expiresAt };
+      },
+      client,
+    );
+  }
+
+  /** Motilal Oswal: user ID + password (hashed with the API key) + DOB/PAN + TOTP → AuthToken (expires 6:00 AM). */
+  connectMotilal(userId: string, client?: ClientInfo) {
+    return this.login(
+      userId,
+      'MOTILAL_OSWAL',
+      [],
+      async (row, s, proxyUrl) => {
+        const code = row.clientCode!.toUpperCase();
+        const publicIp = IPV4.test(row.proxyHost!) ? row.proxyHost! : (row.lastTestIp ?? undefined);
+        const net = { publicIp, localIp: this.config.ANGEL_LOCAL_IP, macAddress: this.config.ANGEL_MAC_ADDRESS };
+        const r = await new MotilalClient({ apiKey: s.apiKey!, apiSecret: s.apiSecret, clientCode: code, proxyUrl, ...net }).login(s.password!, s.twoFa!, totp(s.totpSecret!));
+        return {
+          brokerClientId: code,
+          accessToken: r.authToken,
+          extra: { apiKey: s.apiKey, apiSecret: s.apiSecret, clientCode: code, accessToken: r.accessToken, proxyUrl, ...net },
+          expiresAt: nextIst(5, 55),
+        };
+      },
+      client,
+    );
+  }
+
   /** 5paisa: TOTP + PIN → request token → access token (valid till 11:59 PM). */
   connectFivePaisa(userId: string, client?: ClientInfo) {
     return this.login(
@@ -532,6 +579,10 @@ export class BrokerApiConfigService implements OnApplicationBootstrap, OnModuleD
         return { account: await this.connectFivePaisa(userId, client) };
       case 'ALICE_BLUE':
         return { account: await this.connectAliceBlue(userId, client) };
+      case 'GROWW':
+        return { account: await this.connectGroww(userId, client) };
+      case 'MOTILAL_OSWAL':
+        return { account: await this.connectMotilal(userId, client) };
       case 'FYERS':
         return this.fyersLoginUrl(userId);
       default:
@@ -554,6 +605,10 @@ export class BrokerApiConfigService implements OnApplicationBootstrap, OnModuleD
         return this.connectFivePaisa(r.userId);
       case 'ALICE_BLUE':
         return this.connectAliceBlue(r.userId);
+      case 'GROWW':
+        return this.connectGroww(r.userId);
+      case 'MOTILAL_OSWAL':
+        return this.connectMotilal(r.userId);
       case 'FYERS':
         return this.connectFyers(r.userId, {});
       default:

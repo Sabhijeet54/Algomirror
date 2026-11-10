@@ -51,6 +51,8 @@ export class SaveBrokerApiConfigDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(65535) proxyPort?: number;
   @IsOptional() @Transform(trim) @Matches(/^(\+?\d[\d\s-]{8,15})?$/, { message: 'Enter the mobile number registered with the broker' }) mobile?: string;
   @apply(opt(200)) userId?: string;
+  @apply(opt(200)) password?: string;
+  @apply(opt(20)) twoFa?: string;
   @apply(opt(200)) proxyUser?: string;
   @apply(opt(200)) proxyPass?: string;
   @IsOptional() @IsBoolean() autoLogin?: boolean;
@@ -62,7 +64,7 @@ export class ConnectApiConfigDto {
   @IsOptional() @Transform(trim) @IsString() @MaxLength(4000) accessToken?: string;
 }
 
-const BROKER_SLUG: Record<string, BrokerName> = { 'angel-one': 'ANGEL_ONE', zerodha: 'ZERODHA', upstox: 'UPSTOX', dhan: 'DHAN', fyers: 'FYERS', 'kotak-neo': 'KOTAK_NEO', '5paisa': 'FIVE_PAISA', 'alice-blue': 'ALICE_BLUE' };
+const BROKER_SLUG: Record<string, BrokerName> = { 'angel-one': 'ANGEL_ONE', zerodha: 'ZERODHA', upstox: 'UPSTOX', dhan: 'DHAN', fyers: 'FYERS', 'kotak-neo': 'KOTAK_NEO', '5paisa': 'FIVE_PAISA', 'alice-blue': 'ALICE_BLUE', groww: 'GROWW', 'motilal-oswal': 'MOTILAL_OSWAL' };
 const SLUG_OF: Record<string, string> = Object.fromEntries(Object.entries(BROKER_SLUG).map(([k, v]) => [v, k]));
 function brokerFromSlug(slug: string): BrokerName {
   const b = BROKER_SLUG[slug];
