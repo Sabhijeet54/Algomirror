@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type { Exchange, OrderStatus, OrderType, ProductType } from '@ctp/database';
 import { fetch as undiciFetch } from 'undici';
 import { BrokerInstrumentStore, headerIndex, istDateOfEpoch, csvRows, type BrokerInstrument } from '../market-data/broker-instruments';
@@ -68,17 +69,28 @@ function kotakExpiry(v: number): string {
  * Kotak Neo scrip master: per-segment CSV files whose paths come from the session's base URL. The strike
  * column may be in paise — the value that appears in the trading symbol wins.
  */
+const KOTAK_SCRIP_ROOT = 'https://lapi.kotaksecurities.com/wso2-scripmaster/v1/prod';
+
 export const kotakInstruments = new BrokerInstrumentStore(
   'KotakNeo',
   (ex) => SEG_OUT[ex],
   async (seg, ctx) => {
-    if (!ctx?.baseUrl || !ctx.consumerKey) throw new Error('Kotak Neo session needed to load the scrip master');
-    const { status: http, body } = await brokerFetch<{ data?: { filesPaths?: string[] } }>(`${ctx.baseUrl.replace(/\/$/, '')}/script-details/1.0/masterscrip/file-paths`, {
-      headers: { Authorization: ctx.consumerKey, Accept: 'application/json' },
-      proxyUrl: ctx.proxyUrl,
-    });
-    const url = body?.data?.filesPaths?.find((p) => p.toLowerCase().includes(`/${seg}.csv`)) ?? body?.data?.filesPaths?.find((p) => p.toLowerCase().includes(seg));
-    if (http !== 200 || !url) throw new Error(`no scrip master file for ${seg} (HTTP ${http})`);
+    // The file-paths call (through the static-IP proxy) sometimes takes >15 s; the files themselves are public
+    // and dated, so fall back to that URL rather than failing the order that triggered the load.
+    let url: string | undefined;
+    if (ctx?.baseUrl && ctx.consumerKey) {
+      try {
+        const { status: http, body } = await brokerFetch<{ data?: { filesPaths?: string[] } }>(`${ctx.baseUrl.replace(/\/$/, '')}/script-details/1.0/masterscrip/file-paths`, {
+          headers: { Authorization: ctx.consumerKey, Accept: 'application/json' },
+          proxyUrl: ctx.proxyUrl,
+          timeoutMs: 20_000,
+        });
+        if (http === 200) url = body?.data?.filesPaths?.find((p) => p.toLowerCase().includes(`/${seg}.csv`)) ?? body?.data?.filesPaths?.find((p) => p.toLowerCase().includes(seg));
+      } catch {
+        /* fall through to the public URL */
+      }
+    }
+    url ??= `${KOTAK_SCRIP_ROOT}/${new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10)}/transformed/${seg}.csv`;
     const res = await undiciFetch(url, { signal: AbortSignal.timeout(120_000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const rows = csvRows(await res.text());
@@ -116,6 +128,16 @@ export const kotakInstruments = new BrokerInstrumentStore(
     return out;
   },
 );
+
+/**
+ * Kotak treats `ig` (echoed as GuiOrdId) as a client order id that must be unique: a repeated value is
+ * rejected with "error from core" (Client OrderID already exists), so a fixed "ctpcopy" let only the day's
+ * first order through. Keep the platform prefix (reconciler matches tags starting with "ctp") + random suffix.
+ */
+export function kotakOrderTag(tag?: string): string {
+  const prefix = (tag ?? 'ctp').replace(/[^A-Za-z0-9]/g, '').slice(0, 9) || 'ctp';
+  return `${prefix}${randomBytes(10).toString('hex')}`.slice(0, 20);
+}
 
 export interface KotakSession {
   token: string; // trade (edit) token
@@ -201,7 +223,7 @@ export class KotakNeoAdapter implements BrokerAdapter {
       ts: inst.tradingSymbol,
       tt: o.side === 'BUY' ? 'B' : 'S',
       tk: inst.key,
-      ...(o.tag ? { ig: o.tag.slice(0, 20) } : {}),
+      ig: kotakOrderTag(o.tag),
       os: ORDER_SOURCE,
     });
     if (!d.nOrdNo) throw new BrokerApiError('Kotak Neo did not return an order number.');

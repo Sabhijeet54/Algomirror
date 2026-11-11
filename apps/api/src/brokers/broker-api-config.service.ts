@@ -11,7 +11,7 @@ import { ZerodhaClient } from './zerodha/zerodha.client';
 import { UpstoxClient, upstoxTokenExpiry } from '../trading/upstox.adapter';
 import { DhanClient } from '../trading/dhan.adapter';
 import { FyersClient } from '../trading/fyers.adapter';
-import { KotakNeoClient } from '../trading/kotak.adapter';
+import { KotakNeoClient, kotakInstruments } from '../trading/kotak.adapter';
 import { FivePaisaClient } from '../trading/fivepaisa.adapter';
 import { AliceBlueClient } from '../trading/aliceblue.adapter';
 import { GrowwClient } from '../trading/groww.adapter';
@@ -443,6 +443,8 @@ export class BrokerApiConfigService implements OnApplicationBootstrap, OnModuleD
       async (row, s, proxyUrl) => {
         const k = await new KotakNeoClient({ consumerKey: s.apiKey!, proxyUrl }).login(s.mobile!, row.clientCode!, totp(s.totpSecret!), s.pin!);
         this.sameClient(k.ucc, row.clientCode);
+        // Warm the F&O scrip masters now so the first copy order of the day doesn't wait ~10 s for them.
+        for (const ex of ['NFO', 'BFO']) void kotakInstruments.ensure(ex, { baseUrl: k.baseUrl, consumerKey: s.apiKey, proxyUrl }).catch(() => undefined);
         return {
           brokerClientId: k.ucc,
           accessToken: k.token,

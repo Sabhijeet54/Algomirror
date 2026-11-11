@@ -22,7 +22,7 @@ jest.mock('undici', () => {
 
 import { csvRows, jsonArrayObjects } from '../../src/market-data/broker-instruments';
 import { aliceInstruments } from '../../src/trading/aliceblue.adapter';
-import { kotakInstruments } from '../../src/trading/kotak.adapter';
+import { kotakInstruments, kotakOrderTag } from '../../src/trading/kotak.adapter';
 import { motilalExpiry, motilalInstruments } from '../../src/trading/motilal.adapter';
 
 const KOTAK_HEAD =
@@ -120,5 +120,32 @@ describe('Alice Blue JSON contract master', () => {
     await aliceInstruments.ensure('NSE');
     expect(aliceInstruments.get('NSE', 'GRANULES')).toMatchObject({ key: '11872' });
     expect(aliceInstruments.get('NSE', 'GRAPHISAD')).toBeUndefined();
+  });
+});
+
+describe('Kotak order tag (ig)', () => {
+  it('is unique per order, keeps the ctp prefix and fits 20 alphanumerics', () => {
+    const a = kotakOrderTag('ctpcopy');
+    const b = kotakOrderTag('ctpcopy');
+    expect(a).not.toBe(b);
+    for (const t of [a, b, kotakOrderTag('ctpexit'), kotakOrderTag()]) {
+      expect(t).toMatch(/^ctp[A-Za-z0-9]{1,17}$/);
+      expect(t.length).toBeLessThanOrEqual(20);
+    }
+    expect(a.startsWith('ctpcopy')).toBe(true);
+  });
+});
+
+describe('Kotak scrip master without the file-paths API', () => {
+  beforeAll(() => {
+    routes = [
+      [/file-paths$/, () => ({ status: 500, text: '{}' })],
+      [/lapi\.kotaksecurities\.com\/wso2-scripmaster\/v1\/prod\/\d{4}-\d{2}-\d{2}\/transformed\/nse_fo\.csv$/, () => ({ text: [KOTAK_HEAD, '45396,XX,nse_fo,OPTIDX,NIFTY,NIFTY26N1725250CE,CE,NIFTY17NOV2625250.00CE,,,,,,,,5,65,1479393000,1,2,2.525e+06'].join('\n') })],
+    ];
+  });
+
+  it('falls back to the public dated file', async () => {
+    await kotakInstruments.ensure('NFO', { baseUrl: 'https://kotak', consumerKey: 'k' });
+    expect(kotakInstruments.get('NFO', 'NIFTY17NOV2625250CE')).toMatchObject({ key: '45396', lotSize: 65 });
   });
 });
