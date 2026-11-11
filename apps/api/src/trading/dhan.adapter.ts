@@ -1,6 +1,6 @@
 import type { Exchange, OrderStatus, OrderType, ProductType } from '@ctp/database';
 import { fetch as undiciFetch } from 'undici';
-import { BrokerInstrumentStore, headerIndex, parseCsv, type BrokerInstrument } from '../market-data/broker-instruments';
+import { BrokerInstrumentStore, headerIndex, csvRows, type BrokerInstrument } from '../market-data/broker-instruments';
 import { BrokerApiError, brokerFetch } from '../brokers/broker-http';
 import {
   AdapterOptions,
@@ -56,16 +56,15 @@ export const dhanInstruments = new BrokerInstrumentStore(
   async () => {
     const res = await undiciFetch(SCRIP_MASTER, { signal: AbortSignal.timeout(120_000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const rows = parseCsv(await res.text());
-    const col = headerIndex(rows[0] ?? []);
+    const rows = csvRows(await res.text());
+    const col = headerIndex(rows.next().value ?? []);
     const iEx = col('SEM_EXM_EXCH_ID', 'EXCH_ID'), iSeg = col('SEM_SEGMENT', 'SEGMENT'), iId = col('SEM_SMST_SECURITY_ID', 'SECURITY_ID');
     const iInst = col('SEM_INSTRUMENT_NAME', 'INSTRUMENT'), iTs = col('SEM_TRADING_SYMBOL'), iLot = col('SEM_LOT_UNITS', 'LOT_SIZE');
     const iExp = col('SEM_EXPIRY_DATE', 'SM_EXPIRY_DATE'), iStrike = col('SEM_STRIKE_PRICE', 'STRIKE_PRICE'), iOpt = col('SEM_OPTION_TYPE', 'OPTION_TYPE');
     const iSeries = col('SEM_SERIES', 'SERIES'), iUnder = col('UNDERLYING_SYMBOL');
     if (iEx < 0 || iSeg < 0 || iId < 0 || iTs < 0) throw new Error('unexpected Dhan scrip master header');
     const out: BrokerInstrument[] = [];
-    for (let i = 1; i < rows.length; i++) {
-      const r = rows[i]!;
+    for (const r of rows) {
       const exchange = MASTER_EX[`${r[iEx]}:${r[iSeg]}`];
       if (!exchange || !r[iId]) continue;
       const inst = (r[iInst] ?? '').toUpperCase();

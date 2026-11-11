@@ -1,6 +1,6 @@
 import type { Exchange, OrderStatus } from '@ctp/database';
 import { fetch as undiciFetch } from 'undici';
-import { BrokerInstrumentStore, headerIndex, parseCsv, type BrokerInstrument } from '../market-data/broker-instruments';
+import { BrokerInstrumentStore, headerIndex, csvRows, type BrokerInstrument } from '../market-data/broker-instruments';
 import { BrokerApiError, brokerFetch } from '../brokers/broker-http';
 import {
   AdapterOptions,
@@ -64,16 +64,15 @@ export const fivePaisaInstruments = new BrokerInstrumentStore(
   async (seg) => {
     const res = await undiciFetch(`${FIVEPAISA_API_ROOT}/ScripMaster/segment/${seg}`, { signal: AbortSignal.timeout(120_000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const rows = parseCsv(await res.text());
-    const col = headerIndex(rows[0] ?? []);
+    const rows = csvRows(await res.text());
+    const col = headerIndex(rows.next().value ?? []);
     const iCode = col('ScripCode'), iData = col('ScripData'), iType = col('ScripType'), iStrike = col('StrikeRate'), iLot = col('LotSize');
     const iRoot = col('SymbolRoot'), iExp = col('Expiry'), iSeries = col('Series'), iName = col('Name');
     if (iCode < 0 || iData < 0) throw new Error('unexpected 5paisa scrip master header');
     const exchange = SEG_EX[seg]!;
     const deriv = FO_EXCHANGES.includes(exchange as Exchange);
     const out: BrokerInstrument[] = [];
-    for (let i = 1; i < rows.length; i++) {
-      const r = rows[i]!;
+    for (const r of rows) {
       const data = (r[iData] ?? '').trim();
       if (!r[iCode] || !data) continue;
       let symbol: string | null = null;

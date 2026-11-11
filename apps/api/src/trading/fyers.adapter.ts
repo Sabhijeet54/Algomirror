@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Exchange, OrderStatus, OrderType, ProductType } from '@ctp/database';
 import { fetch as undiciFetch } from 'undici';
-import { BrokerInstrumentStore, istDateOfEpoch, parseCsv, type BrokerInstrument } from '../market-data/broker-instruments';
+import { BrokerInstrumentStore, istDateOfEpoch, csvRows, type BrokerInstrument } from '../market-data/broker-instruments';
 import { BrokerApiError, brokerFetch } from '../brokers/broker-http';
 import {
   AdapterOptions,
@@ -63,7 +63,7 @@ export const fyersInstruments = new BrokerInstrumentStore(
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const exchange = FILE_EX[file]!;
     const out: BrokerInstrument[] = [];
-    for (const r of parseCsv(await res.text())) {
+    for (const r of csvRows(await res.text())) {
       // 0 fyToken · 3 lot · 8 expiry (epoch s) · 9 ticker · 13 underlying · 15 strike · 16 option type
       const ticker = (r[9] ?? '').trim().toUpperCase();
       if (!ticker.includes(':')) continue; // header / junk

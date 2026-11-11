@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Exchange, OrderStatus, OrderType, ProductType } from '@ctp/database';
 import { fetch as undiciFetch } from 'undici';
-import { BrokerInstrumentStore, headerIndex, istDateOfEpoch, parseCsv, type BrokerInstrument } from '../market-data/broker-instruments';
+import { BrokerInstrumentStore, headerIndex, csvRows, type BrokerInstrument } from '../market-data/broker-instruments';
 import { BrokerApiError, brokerFetch } from '../brokers/broker-http';
 import {
   AdapterOptions,
@@ -53,7 +53,9 @@ export function motilalStatus(s: string): OrderStatus {
 /** Expiry from the scrip master: exchange epoch (seconds since 1980) or "23-Nov-2026" → "2026-11-23". */
 export function motilalExpiry(v: string): string {
   const s = (v ?? '').trim();
-  if (/^\d{8,10}$/.test(s) && Number(s) > 0) return istDateOfEpoch(Number(s) + EPOCH_1980);
+  // Seconds since 1980-01-01 on the IST wall clock (MCX contracts end at 23:59:59), so read the date in UTC —
+  // converting to IST pushed MCX expiries a day late.
+  if (/^\d{8,10}$/.test(s) && Number(s) > 0) return new Date((Number(s) + EPOCH_1980) * 1000).toISOString().slice(0, 10);
   const d = istTime(s, false);
   return d ? new Date(d.getTime() + 330 * 60_000).toISOString().slice(0, 10) : '';
 }
@@ -76,22 +78,24 @@ function istTime(s: unknown, fallback = true): Date {
 export const motilalPasswordHash = (password: string, apiKey: string) => createHash('sha256').update(`${password}${apiKey}`).digest('hex');
 
 /** Motilal scrip master: public CSV per exchange. Key = scripcode (symboltoken). */
+/** Motilal's short names for BSE index derivatives → the platform's underlying names. */
+const MO_INDEX: Record<string, string> = { BSX: 'SENSEX', BKX: 'BANKEX', SX50: 'SENSEX50' };
+
 export const motilalInstruments = new BrokerInstrumentStore(
   'Motilal',
   (ex) => EX_OUT[ex],
   async (file) => {
     const res = await undiciFetch(`${MOTILAL_API_ROOT}/getscripmastercsv?name=${file}`, { signal: AbortSignal.timeout(120_000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const rows = parseCsv(await res.text());
-    const col = headerIndex(rows[0] ?? []);
+    const rows = csvRows(await res.text());
+    const col = headerIndex(rows.next().value ?? []);
     const iCode = col('scripcode'), iShort = col('scripshortname'), iName = col('scripname'), iLot = col('marketlot'), iInst = col('instrumentname');
     const iExp = col('expirydate'), iStrike = col('strikeprice'), iOpt = col('optiontype'), iSusp = col('issuspended');
     if (iCode < 0 || iShort < 0) throw new Error('unexpected Motilal scrip master header');
     const exchange = EX_IN[file]!;
     const deriv = FO_EXCHANGES.includes(exchange as Exchange);
     const out: BrokerInstrument[] = [];
-    for (let i = 1; i < rows.length; i++) {
-      const r = rows[i]!;
+    for (const r of rows) {
       const code = (r[iCode] ?? '').trim();
       const short = (r[iShort] ?? '').trim().toUpperCase();
       if (!code || !short || (r[iSusp] ?? '').trim().toUpperCase() === 'Y') continue;
@@ -101,7 +105,7 @@ export const motilalInstruments = new BrokerInstrumentStore(
         const inst = (r[iInst] ?? '').trim().toUpperCase();
         const type = opt === 'CE' || opt === 'PE' ? opt : inst.startsWith('FUT') ? 'FUT' : null;
         if (!type) continue;
-        symbol = canonicalFromParts(short, motilalExpiry(r[iExp] ?? ''), type === 'FUT' ? null : Number(r[iStrike]), type);
+        symbol = canonicalFromParts((exchange === 'BFO' && MO_INDEX[short]) || short, motilalExpiry(r[iExp] ?? ''), type === 'FUT' ? null : Number(r[iStrike]), type);
       } else {
         // Cash: optiontype carries the series (EQ, BE, …) on NSE.
         if (exchange === 'NSE' && opt !== 'EQ' && opt !== 'BE') continue;

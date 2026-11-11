@@ -1,6 +1,6 @@
 import type { Exchange, OrderStatus, OrderType, ProductType } from '@ctp/database';
 import { fetch as undiciFetch } from 'undici';
-import { BrokerInstrumentStore, headerIndex, istDateOfEpoch, parseCsv, type BrokerInstrument } from '../market-data/broker-instruments';
+import { BrokerInstrumentStore, headerIndex, istDateOfEpoch, csvRows, type BrokerInstrument } from '../market-data/broker-instruments';
 import { BrokerApiError, brokerFetch } from '../brokers/broker-http';
 import {
   AdapterOptions,
@@ -59,6 +59,8 @@ const OFFSET_1980 = 315_511_200;
 function kotakExpiry(v: number): string {
   let s = v > 1e12 ? v / 1000 : v;
   if (new Date(s * 1000).getUTCFullYear() < 2020) s += OFFSET_1980;
+  // MCX rows carry the IST wall clock as if it were UTC (…23:59:59); NSE/BSE carry real epochs (18:29:59 UTC).
+  if (Math.floor(s) % 86_400 === 86_399) return new Date(s * 1000).toISOString().slice(0, 10);
   return istDateOfEpoch(s);
 }
 
@@ -79,22 +81,24 @@ export const kotakInstruments = new BrokerInstrumentStore(
     if (http !== 200 || !url) throw new Error(`no scrip master file for ${seg} (HTTP ${http})`);
     const res = await undiciFetch(url, { signal: AbortSignal.timeout(120_000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const rows = parseCsv(await res.text());
-    const col = headerIndex(rows[0] ?? []);
+    const rows = csvRows(await res.text());
+    const col = headerIndex(rows.next().value ?? []);
     const iTok = col('pSymbol'), iSeg = col('pExchSeg'), iInst = col('pInstType'), iName = col('pSymbolName'), iTs = col('pTrdSymbol');
     const iOpt = col('pOptionType'), iLot = col('lLotSize'), iExp = col('lExpiryDate', 'pExpiryDate'), iStrike = col('dStrikePrice'), iGroup = col('pGroup');
     if (iTok < 0 || iTs < 0) throw new Error('unexpected Kotak scrip master header');
     const exchange = SEG_IN[seg]!;
     const out: BrokerInstrument[] = [];
-    for (let i = 1; i < rows.length; i++) {
-      const r = rows[i]!;
+    for (const r of rows) {
       if (iSeg >= 0 && r[iSeg] && r[iSeg]!.toLowerCase() !== seg) continue;
       const ts = (r[iTs] ?? '').trim().toUpperCase();
       const inst = (r[iInst] ?? '').toUpperCase();
       let symbol: string | null = null;
-      if (inst.startsWith('OPT') || inst.startsWith('FUT')) {
+      // NSE/MCX files use OPTIDX/OPTSTK/FUTIDX…; the BSE F&O file uses IO/SO (options) and IF/SF (futures).
+      const isFut = inst.startsWith('FUT') || inst === 'IF' || inst === 'SF';
+      const isOpt = inst.startsWith('OPT') || inst === 'IO' || inst === 'SO';
+      if (isOpt || isFut) {
         const opt = (r[iOpt] ?? '').trim().toUpperCase();
-        const type = inst.startsWith('FUT') ? 'FUT' : opt === 'CE' || opt === 'PE' ? opt : null;
+        const type = isFut ? 'FUT' : opt === 'CE' || opt === 'PE' ? opt : null;
         const exp = Number(r[iExp]);
         if (!type || !exp) continue;
         let strike = Number(r[iStrike]) || 0;

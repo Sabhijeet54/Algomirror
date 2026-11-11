@@ -81,9 +81,12 @@ export class BrokerInstrumentStore {
   }
 }
 
-/** Minimal CSV parser (RFC 4180 quotes, CRLF), returns rows of cells. */
-export function parseCsv(text: string): string[][] {
-  const out: string[][] = [];
+/**
+ * Minimal CSV reader (RFC 4180 quotes, CRLF) that yields one row at a time. Scrip masters run to 30–40 MB
+ * and ~100k rows × 80 columns: materialising every cell at once blew the API's 256 MB heap, so loaders
+ * iterate and keep only the few columns they need.
+ */
+export function* csvRows(text: string): Generator<string[], void, undefined> {
   let row: string[] = [];
   let cell = '';
   let q = false;
@@ -103,16 +106,39 @@ export function parseCsv(text: string): string[][] {
     } else if (c === '\n' || c === '\r') {
       if (c === '\r' && text[i + 1] === '\n') i++;
       row.push(cell);
-      if (row.length > 1 || row[0] !== '') out.push(row);
+      if (row.length > 1 || row[0] !== '') yield row;
       row = [];
       cell = '';
     } else cell += c;
   }
   if (cell !== '' || row.length) {
     row.push(cell);
-    out.push(row);
+    yield row;
   }
-  return out;
+}
+
+/**
+ * Yields the top-level objects of a big JSON array one at a time (string- and nesting-aware), so a 40 MB
+ * instrument file never becomes a few hundred MB of parsed objects. `keep` sees each object's raw text and
+ * can skip it before JSON.parse.
+ */
+export function* jsonArrayObjects<T>(text: string, keep?: (raw: string) => boolean): Generator<T, void, undefined> {
+  let depth = 0;
+  let start = -1;
+  let inStr = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (inStr) {
+      if (c === 92) i++; // backslash escape
+      else if (c === 34) inStr = false;
+    } else if (c === 34) inStr = true;
+    else if (c === 123) {
+      if (depth++ === 0) start = i;
+    } else if (c === 125 && depth > 0 && --depth === 0) {
+      const raw = text.slice(start, i + 1);
+      if (!keep || keep(raw)) yield JSON.parse(raw) as T;
+    }
+  }
 }
 
 /** Header → column index, matching names case-insensitively and ignoring spaces / ';'. */

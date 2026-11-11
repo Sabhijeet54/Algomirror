@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { fetch as undiciFetch } from 'undici';
 import { canonicalFromParts } from '../trading/symbols';
+import { jsonArrayObjects } from './broker-instruments';
 
 /**
  * Angel One OpenAPI scrip master (public JSON, every exchange, refreshed daily by Angel). Gives the EXACT
@@ -46,7 +47,10 @@ class AngelScripMasterStore {
     try {
       const res = await undiciFetch(URL, { signal: AbortSignal.timeout(120_000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const rows = (await res.json()) as { token?: string; symbol?: string; name?: string; expiry?: string; strike?: string; lotsize?: string; instrumenttype?: string; exch_seg?: string }[];
+      type Row = { token?: string; symbol?: string; name?: string; expiry?: string; strike?: string; lotsize?: string; instrumenttype?: string; exch_seg?: string };
+      // ~38 MB / 200k rows: res.json() needed more than the API's whole heap, so scan and parse only F&O rows.
+      const fno = /"exch_seg"\s*:\s*"(NFO|BFO|MCX|CDS|BCD)"/;
+      const rows = jsonArrayObjects<Row>(await res.text(), (raw) => fno.test(raw));
       const list: AngelContract[] = [];
       const map = new Map<string, AngelContract>();
       for (const r of rows) {

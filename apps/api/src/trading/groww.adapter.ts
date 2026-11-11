@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { Exchange, OrderStatus, OrderType, ProductType } from '@ctp/database';
 import { fetch as undiciFetch } from 'undici';
-import { BrokerInstrumentStore, headerIndex, parseCsv, type BrokerInstrument } from '../market-data/broker-instruments';
+import { BrokerInstrumentStore, headerIndex, csvRows, type BrokerInstrument } from '../market-data/broker-instruments';
 import { BrokerApiError, brokerFetch } from '../brokers/broker-http';
 import {
   AdapterOptions,
@@ -78,14 +78,13 @@ export const growwInstruments = new BrokerInstrumentStore(
   async () => {
     const res = await undiciFetch(INSTRUMENTS_URL, { signal: AbortSignal.timeout(120_000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const rows = parseCsv(await res.text());
-    const col = headerIndex(rows[0] ?? []);
+    const rows = csvRows(await res.text());
+    const col = headerIndex(rows.next().value ?? []);
     const iEx = col('exchange'), iSeg = col('segment'), iTs = col('trading_symbol'), iType = col('instrument_type');
     const iSeries = col('series'), iUnder = col('underlying_symbol'), iExp = col('expiry_date'), iStrike = col('strike_price'), iLot = col('lot_size');
     if (iEx < 0 || iSeg < 0 || iTs < 0 || iType < 0) throw new Error('unexpected Groww instrument header');
     const out: BrokerInstrument[] = [];
-    for (let i = 1; i < rows.length; i++) {
-      const r = rows[i]!;
+    for (const r of rows) {
       const exchange = IN[`${(r[iEx] ?? '').toUpperCase()}:${(r[iSeg] ?? '').toUpperCase()}`];
       const ts = (r[iTs] ?? '').trim().toUpperCase();
       if (!exchange || !ts) continue;

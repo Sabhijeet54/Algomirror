@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Exchange, OrderStatus } from '@ctp/database';
 import { fetch as undiciFetch } from 'undici';
-import { BrokerInstrumentStore, headerIndex, parseCsv, type BrokerInstrument } from '../market-data/broker-instruments';
+import { BrokerInstrumentStore, headerIndex, csvRows, jsonArrayObjects, type BrokerInstrument } from '../market-data/broker-instruments';
 import { BrokerApiError, brokerFetch } from '../brokers/broker-http';
 import {
   AdapterOptions,
@@ -59,32 +59,45 @@ export const aliceInstruments = new BrokerInstrumentStore(
   async (ex) => {
     const res = await undiciFetch(`${CONTRACT_ROOT}?exch=${ex}`, { signal: AbortSignal.timeout(120_000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const rows = parseCsv(await res.text());
-    const col = headerIndex(rows[0] ?? []);
-    const iTok = col('Token'), iTs = col('Trading Symbol'), iSym = col('Symbol'), iLot = col('Lot Size');
-    const iExp = col('Expiry Date'), iOpt = col('Option Type'), iStrike = col('Strike Price'), iInst = col('Instrument Type');
-    if (iTok < 0 || iTs < 0) throw new Error('unexpected Alice Blue contract master header');
+    const text = await res.text();
+    // The contract master is JSON ({"NFO":[{token, trading_symbol, symbol, expiry_date(ms), …}]}); the old CSV
+    // layout ("Token", "Trading Symbol"…) is still read if Alice Blue ever serves it again.
+    type Row = { token?: string; trading_symbol?: string; symbol?: string; lot_size?: string; expiry_date?: number | string; option_type?: string; strike_price?: string; instrument_type?: string };
+    let rows: Iterable<Row>;
+    const json = text.trimStart().startsWith('{') || text.trimStart().startsWith('[');
+    if (json) {
+      const at = text.indexOf('[');
+      rows = at < 0 ? [] : jsonArrayObjects<Row>(text.slice(at));
+    } else {
+      const csv = csvRows(text);
+      const col = headerIndex(csv.next().value ?? []);
+      const iTok = col('Token'), iTs = col('Trading Symbol'), iSym = col('Symbol'), iLot = col('Lot Size');
+      const iExp = col('Expiry Date'), iOpt = col('Option Type'), iStrike = col('Strike Price'), iInst = col('Instrument Type');
+      if (iTok < 0 || iTs < 0) throw new Error('unexpected Alice Blue contract master header');
+      rows = (function* () {
+        for (const r of csv) yield { token: r[iTok], trading_symbol: r[iTs], symbol: r[iSym], lot_size: r[iLot], expiry_date: r[iExp], option_type: r[iOpt], strike_price: r[iStrike], instrument_type: r[iInst] };
+      })();
+    }
     const deriv = FO_EXCHANGES.includes(ex as Exchange);
     const out: BrokerInstrument[] = [];
-    for (let i = 1; i < rows.length; i++) {
-      const r = rows[i]!;
-      const token = (r[iTok] ?? '').trim();
-      const ts = (r[iTs] ?? '').trim().toUpperCase();
+    for (const r of rows) {
+      const token = String(r.token ?? '').trim();
+      const ts = String(r.trading_symbol ?? '').trim().toUpperCase();
       if (!token || !ts) continue;
       let symbol: string | null;
       if (deriv) {
-        const opt = (r[iOpt] ?? '').trim().toUpperCase();
-        const inst = (r[iInst] ?? '').toUpperCase();
-        const type = opt === 'CE' || opt === 'PE' ? opt : inst.startsWith('FUT') || opt === 'XX' || !opt ? 'FUT' : null;
+        const opt = String(r.option_type ?? '').trim().toUpperCase();
+        const inst = String(r.instrument_type ?? '').toUpperCase();
+        const type = opt === 'CE' || opt === 'PE' ? opt : inst.startsWith('FUT') || inst === 'IF' || inst === 'SF' || opt === 'XX' || !opt ? 'FUT' : null;
         if (!type) continue;
-        symbol = canonicalFromParts((r[iSym] ?? '').trim(), aliceExpiry(r[iExp] ?? ''), type === 'FUT' ? null : Number(r[iStrike]), type);
+        symbol = canonicalFromParts(String(r.symbol ?? '').trim(), aliceExpiry(String(r.expiry_date ?? '')), type === 'FUT' ? null : Number(r.strike_price), type);
       } else {
         const m = /^(.+)-(EQ|BE)$/.exec(ts);
         if (ex === 'NSE' && !m) continue;
-        symbol = m ? m[1]! : (r[iSym] ?? ts).trim().toUpperCase();
+        symbol = m ? m[1]! : String(r.symbol ?? ts).trim().toUpperCase();
       }
       if (!symbol) continue;
-      out.push({ exchange: ex, symbol, key: token, lotSize: Number(r[iLot]) || 1, tradingSymbol: ts });
+      out.push({ exchange: ex, symbol, key: token, lotSize: Number(r.lot_size) || 1, tradingSymbol: ts });
     }
     return out;
   },

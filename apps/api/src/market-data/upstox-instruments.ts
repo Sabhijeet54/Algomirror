@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { promisify } from 'node:util';
 import { gunzip } from 'node:zlib';
 import { fetch as undiciFetch } from 'undici';
+import { jsonArrayObjects } from './broker-instruments';
 import { canonicalFromParts } from '../trading/symbols';
 
 /**
@@ -81,7 +82,7 @@ class UpstoxInstrumentStore {
       const res = await undiciFetch(FILE[file]!, { signal: AbortSignal.timeout(120_000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const buf = Buffer.from(await res.arrayBuffer());
-      const rows = JSON.parse((await gunzipAsync(buf)).toString('utf8')) as Row[];
+      const rows = jsonArrayObjects<Row>((await gunzipAsync(buf)).toString('utf8'));
       let n = 0;
       for (const r of rows) {
         const exchange = SEGMENT[r.segment ?? ''];
