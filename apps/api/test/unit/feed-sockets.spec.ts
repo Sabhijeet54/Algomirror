@@ -3,6 +3,18 @@
  * (removeAllListeners + ws.close()), the WebSocket then fired onerror, and AngelFeed emitted an 'error'
  * nobody listened to — Node throws on that, so the whole API process exited.
  */
+jest.mock('node:https', () => {
+  const { EventEmitter } = jest.requireActual('node:events');
+  return {
+    request: jest.fn(() => {
+      const req = new EventEmitter() as import('node:events').EventEmitter & { end: () => void; destroy: () => void };
+      req.end = () => setImmediate(() => req.emit('response', { statusCode: 401, resume: () => undefined }));
+      req.destroy = () => undefined;
+      return req;
+    }),
+  };
+});
+
 import { AngelFeed } from '../../src/market-data/angel-feed';
 import { KiteTicker } from '../../src/market-data/kite-ticker';
 
@@ -54,5 +66,45 @@ describe.each([
     expect(ws.onerror).toBeNull();
     expect(ws.onclose).toBeNull();
     expect(onError).not.toHaveBeenCalled();
+  });
+});
+
+describe('AngelFeed connect failures', () => {
+  it('turns a refused handshake (error, no close) into a close with the HTTP status', async () => {
+    const feed = new AngelFeed('key', 'C1', 'feed');
+    const closed = new Promise<string>((ok) => feed.on('close', ok));
+    feed.on('error', () => undefined);
+    feed.connect();
+    FakeWs.last!.onerror?.();
+    await expect(closed).resolves.toMatch(/handshake failed \(HTTP 401\).*not whitelisted/);
+    expect(FakeWs.last!.closed).toBe(true);
+  });
+
+  it('gives up when the socket never opens', async () => {
+    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
+    try {
+      const feed = new AngelFeed('key', 'C1', 'feed');
+      const onClose = jest.fn();
+      feed.on('close', onClose);
+      feed.connect();
+      jest.advanceTimersByTime(20_000);
+      await new Promise((r) => setImmediate(r));
+      await new Promise((r) => setImmediate(r));
+      expect(onClose).toHaveBeenCalledWith(expect.stringMatching(/no answer in 20 s/));
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('closes only once', async () => {
+    const feed = new AngelFeed('key', 'C1', 'feed');
+    const onClose = jest.fn();
+    feed.on('close', onClose);
+    feed.connect();
+    const ws = FakeWs.last!;
+    ws.onopen?.();
+    ws.onclose?.({ code: 1006, reason: '' });
+    ws.onclose?.({ code: 1006, reason: '' });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
