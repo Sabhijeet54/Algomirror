@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { request } from 'node:https';
+import { ProxyAgent, WebSocket as UndiciWebSocket } from 'undici';
 
 const FEED_URL = 'wss://smartapisocket.angelone.in/smart-stream';
 const CONNECT_TIMEOUT_MS = 20_000;
@@ -50,6 +51,8 @@ export class AngelFeed extends EventEmitter {
     private readonly apiKey: string,
     private readonly clientCode: string,
     private readonly feedToken: string,
+    /** Static-IP proxy (same one the account's REST calls use): Angel silently drops sockets from other IPs. */
+    private readonly proxyUrl?: string,
   ) {
     super();
   }
@@ -57,7 +60,7 @@ export class AngelFeed extends EventEmitter {
   connect(): void {
     const qs = new URLSearchParams({ clientCode: this.clientCode, feedToken: this.feedToken, apiKey: this.apiKey });
     const url = `${FEED_URL}?${qs.toString()}`;
-    const ws = new WebSocket(url);
+    const ws = this.proxyUrl ? (new UndiciWebSocket(url, { dispatcher: new ProxyAgent(this.proxyUrl) }) as unknown as WebSocket) : new WebSocket(url);
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
     this.opened = false;
@@ -135,7 +138,7 @@ export class AngelFeed extends EventEmitter {
     }
     const status = await probeHandshake(url).catch(() => null);
     const hint = status === 401 || status === 403 ? ' — feed token/API key rejected or server IP not whitelisted on Angel' : '';
-    this.end(`${what}${status ? ` (HTTP ${status})` : ''}${hint}`);
+    this.end(`${what}${status ? ` (HTTP ${status})` : ''}${hint}${this.proxyUrl ? ' [via static-IP proxy]' : ' [direct, no proxy]'}`);
   }
 
   private safeError(err: Error): void {

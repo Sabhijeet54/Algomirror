@@ -232,7 +232,7 @@ export class MarketFeedService implements OnApplicationBootstrap, OnModuleDestro
           token,
           { dataOnly: true },
         );
-        const f = new AngelFeed(apiKey, account.brokerClientId, extra.feedToken);
+        const f = new AngelFeed(apiKey, account.brokerClientId, extra.feedToken, extra.proxyUrl || this.config.ANGEL_PROXY_URL || undefined);
         this.angel = f;
         this.wire(f);
         f.on('tick', (exType: number, tok: string, ltp: number) => {
