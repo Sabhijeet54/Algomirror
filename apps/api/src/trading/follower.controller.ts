@@ -9,6 +9,7 @@ import { toCopyOrderView, toStrategyFollowerView, toStrategyView } from '../comm
 import { PRISMA } from '../common/prisma/prisma.service';
 import { FollowDto, TradingModeDto } from './trading.dto';
 import { allocationLabel, ClientSummaryService, isRemoved, REMOVED_REASON } from './client-summary.service';
+import { canReconnect } from './follower-access';
 import { PositionResizeService } from './position-resize.service';
 import { MarketFeedService } from '../market-data/market-feed.service';
 import { PriceCacheService } from '../market-data/price-cache.service';
@@ -204,7 +205,7 @@ export class FollowerController {
     ]);
     const byStrategy = new Map(mine.filter((m) => !isRemoved(m)).map((m) => [m.strategyId, m]));
     // Only strategies given to me by the master / admin are listed (plus ones I disconnected myself, to reconnect).
-    const allowed = new Set(mine.filter((m) => !isRemoved(m) || m.stoppedByUserId === user.id).map((m) => m.strategyId));
+    const allowed = new Set(mine.filter((m) => canReconnect(m, user.id)).map((m) => m.strategyId));
     return rows.filter((st) => allowed.has(st.id)).map((st) => {
       const sub = byStrategy.get(st.id);
       return { ...toStrategyView(st), connected: !!sub, subscription: sub ? toStrategyFollowerView(sub) : null, allocationLabel: sub ? allocationLabel(sub) : null };
@@ -220,11 +221,15 @@ export class FollowerController {
   async disconnect(@CurrentUser() user: RequestUser, @Param('id') id: string, @Req() req: Request) {
     const sub = await this.prisma.strategyFollower.findUnique({ where: { strategyId_followerUserId: { strategyId: id, followerUserId: user.id } } });
     if (!sub || isRemoved(sub)) throw new NotFoundException('You are not connected to this strategy');
+    // Inside the client's panel the request runs as the client, but it is the master removing the strategy:
+    // record the master, so the strategy leaves the client's marketplace and the client can't re-connect it.
+    // Only a client's own disconnect stays re-connectable from the marketplace.
+    const by = user.impersonatorId ?? user.id;
     await this.prisma.strategyFollower.update({
       where: { id: sub.id },
-      data: { copyStatus: 'OFF', stoppedAt: new Date(), stoppedReason: REMOVED_REASON, stoppedByUserId: user.id },
+      data: { copyStatus: 'OFF', stoppedAt: new Date(), stoppedReason: REMOVED_REASON, stoppedByUserId: by },
     });
-    await this.audit.log({ action: 'COPY_STOPPED', actorUserId: user.id, targetType: 'StrategyFollower', targetId: sub.id, metadata: { disconnected: true }, client: clientInfo(req) });
+    await this.audit.log({ action: 'COPY_STOPPED', actorUserId: by, targetType: 'StrategyFollower', targetId: sub.id, metadata: { disconnected: true, ...(user.impersonatorId ? { byMasterInClientPanel: true } : {}) }, client: clientInfo(req) });
     this.accountEvents.emit({ type: 'settings', brokerAccountId: sub.brokerAccountId ?? '', userId: user.id });
     return { disconnected: true };
   }
@@ -273,7 +278,7 @@ export class FollowerController {
     if (dto.allocationMode === 'CAPITAL_PERCENTAGE' && !dto.allocationPercent) throw new BadRequestException('Allocation % is required');
     if (dto.allocationMode === 'PROPORTIONAL' && !dto.allocationAmount) throw new BadRequestException('Capital amount is required');
     const existing = await this.prisma.strategyFollower.findUnique({ where: { strategyId_followerUserId: { strategyId: id, followerUserId: user.id } } });
-    if (!existing || (isRemoved(existing) && existing.stoppedByUserId !== user.id)) {
+    if (!existing || !canReconnect(existing, user.id)) {
       throw new ForbiddenException('This strategy is not assigned to you — ask your master to assign it.');
     }
     // Connecting from the marketplace: a new (or previously disconnected) subscription takes a free seat.
