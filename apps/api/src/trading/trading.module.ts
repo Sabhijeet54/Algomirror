@@ -1,3 +1,6 @@
+import { WebhookController } from './webhook.controller';
+import { WebhookService } from './webhook.service';
+import { MasterOrderService } from './master-order.service';
 import { Module } from '@nestjs/common';
 import { BrokersModule } from '../brokers/brokers.module';
 import { MarketDataModule } from '../market-data/market-data.module';
@@ -17,8 +20,8 @@ import { TradingService } from './trading.service';
 
 @Module({
   imports: [BrokersModule, MarketDataModule],
-  controllers: [MasterController, FollowerController],
-  providers: [SignalService, ClientAssignService, ClientSummaryService, PositionResizeService, TradingService, ClientRegistryService, CopyEngineService, CopyReconcilerService, OrderMirrorService, MasterPollerService, RiskService],
-  exports: [SignalService, ClientAssignService, ClientSummaryService, CopyEngineService, CopyReconcilerService, RiskService, ClientRegistryService],
+  controllers: [MasterController, FollowerController, WebhookController],
+  providers: [WebhookService, MasterOrderService, SignalService, ClientAssignService, ClientSummaryService, PositionResizeService, TradingService, ClientRegistryService, CopyEngineService, CopyReconcilerService, OrderMirrorService, MasterPollerService, RiskService],
+  exports: [MasterOrderService, SignalService, ClientAssignService, ClientSummaryService, CopyEngineService, CopyReconcilerService, RiskService, ClientRegistryService],
 })
 export class TradingModule {}

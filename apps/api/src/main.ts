@@ -36,6 +36,8 @@ export function configureApp(app: NestExpressApplication): void {
   app.use(accessLog);
   app.use(csrfHeaderCheck);
   app.useBodyParser('json', { limit: '100kb' });
+  // TradingView posts the alert message as text/plain unless it is valid JSON (webhook reads both).
+  app.useBodyParser('text', { limit: '16kb' });
 
   app.enableCors({
     origin: [config.WEB_ORIGIN],

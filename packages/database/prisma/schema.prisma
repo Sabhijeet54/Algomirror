@@ -371,6 +371,8 @@ model Strategy {
   /// Strategy-level hard limits applied to every follower order.
   maxOrderValue      Decimal?       @db.Decimal(18, 2)
   maxQuantityPerOrder Int?
+  /// Secret token of the TradingView / alert webhook (POST /hooks/tv/:token). Null = webhook off.
+  webhookToken       String?        @unique
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
 

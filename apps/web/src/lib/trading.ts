@@ -757,3 +757,36 @@ export function useMasterCreateClient() {
 
 export const useMasterLicenceQuota = (enabled = true) =>
   useQuery({ queryKey: ['master', 'licence-quota'], queryFn: () => api<{ remaining: number; customAllowed: boolean }>('/master/licence-quota'), enabled });
+
+// ------------------------------------------------------------ TradingView / alert webhook (master)
+
+export interface WebhookLogRow {
+  at: string;
+  ok: boolean;
+  action: string;
+  symbol: string | null;
+  message: string;
+  tradeId?: string;
+}
+export interface WebhookInfo {
+  enabled: boolean;
+  url: string | null;
+  recent: WebhookLogRow[];
+}
+
+export const useStrategyWebhook = (id: string | null) =>
+  useQuery({
+    queryKey: ['master', 'webhook', id],
+    queryFn: () => api<WebhookInfo>(`/master/strategies/${id}/webhook`),
+    enabled: !!id,
+    refetchInterval: 15_000,
+    retry: false,
+  });
+
+export function useWebhookChange(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (op: 'rotate' | 'disable') => api<WebhookInfo>(`/master/strategies/${id}/webhook`, { method: op === 'rotate' ? 'POST' : 'DELETE' }),
+    onSuccess: (data) => qc.setQueryData(['master', 'webhook', id], data),
+  });
+}

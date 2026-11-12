@@ -3,7 +3,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import type Redis from 'ioredis';
 import type { PrismaClient, Strategy } from '@ctp/database';
-import { generateToken, hashPassword } from '@ctp/shared';
+import { hashPassword } from '@ctp/shared';
 import { AssignLicenceDto, MasterClientCreateDto, MasterSubAdminDto, UpdateUserStatusDto } from '../admin/dto/admin.dto';
 import { AssignStrategyDto } from './trading.dto';
 import { AuditService } from '../audit/audit.service';
@@ -14,7 +14,6 @@ import { PRISMA } from '../common/prisma/prisma.service';
 import { REDIS } from '../common/redis/redis.module';
 import { BrokerApiError } from '../brokers/broker-http';
 import { CopyEngineService } from './copy-engine.service';
-import { MasterPollerService } from './master-poller.service';
 import { RiskService } from './risk.service';
 import { AccountEvents } from '../realtime/account-events';
 import { MarketFeedService } from '../market-data/market-feed.service';
@@ -32,6 +31,8 @@ import { REMOVED_REASON } from './follower-access';
 import { licenceStatus } from '../common/mappers';
 import { overlayLivePrices, paperPositionView } from './price-overlay';
 import { TradingService } from './trading.service';
+import { MasterOrderService } from './master-order.service';
+import { WebhookService } from './webhook.service';
 import { emailTrialUsed, isTrialLicence, licenceExpiry, licenceHistory, trialUsed } from '../common/licence';
 
 /** Everything a master trader needs: strategies, followers, live account data and trade placement. */
@@ -43,7 +44,6 @@ export class MasterController {
     @Inject(REDIS) private readonly redis: Redis,
     private readonly trading: TradingService,
     private readonly engine: CopyEngineService,
-    private readonly poller: MasterPollerService,
     private readonly audit: AuditService,
     private readonly risk: RiskService,
     private readonly accountEvents: AccountEvents,
@@ -55,6 +55,8 @@ export class MasterController {
     private readonly fno: FnoCatalogService,
     private readonly registry: ClientRegistryService,
     private readonly sessions: BrokerSessionService,
+    private readonly orders: MasterOrderService,
+    private readonly hooks: WebhookService,
   ) {}
 
   private async own(user: RequestUser, id: string): Promise<Strategy> {
@@ -574,75 +576,38 @@ export class MasterController {
   @Post('orders')
   async placeOrder(@CurrentUser() user: RequestUser, @Body() dto: MasterOrderDto) {
     const strategy = await this.own(user, dto.strategyId);
-    const lic = await this.prisma.user.findUnique({ where: { id: user.id }, select: { licenceExpiresAt: true } });
-    if (lic?.licenceExpiresAt && lic.licenceExpiresAt.getTime() <= Date.now()) {
-      throw new ForbiddenException('Your licence has expired. Contact the admin to renew it.');
-    }
-    if (strategy.status !== 'ACTIVE') throw new BadRequestException('Start (activate) the strategy before trading it.');
-    if (strategy.allowedExchanges.length && !strategy.allowedExchanges.includes(dto.exchange)) {
-      throw new BadRequestException(`${dto.exchange} is not allowed in this strategy.`);
-    }
-    if (strategy.allowedInstruments.length) {
-      const ok = strategy.allowedInstruments.some((p) => (p.endsWith('*') ? dto.symbol.startsWith(p.slice(0, -1)) : dto.symbol === p));
-      if (!ok) throw new BadRequestException(`${dto.symbol} is not allowed in this strategy.`);
-    }
-    if ((dto.orderType === 'LIMIT' || dto.orderType === 'SL') && !dto.price) throw new BadRequestException('Price is required for LIMIT / SL orders.');
-    if ((dto.orderType === 'SL' || dto.orderType === 'SL_M') && !dto.triggerPrice) throw new BadRequestException('Trigger price is required for SL orders.');
-    if (dto.targetPrice != null && dto.stopLossPrice != null && (dto.side === 'BUY' ? dto.targetPrice <= dto.stopLossPrice : dto.targetPrice >= dto.stopLossPrice)) {
-      throw new BadRequestException(dto.side === 'BUY' ? 'For a BUY, target must be above stop loss' : 'For a SELL, target must be below stop loss');
-    }
-
-    // An order against an open position only EXITS it: never sell more than was bought (or buy back more than
-    // was sold) — the extra would open an opposite trade for every client.
-    const open = this.registry.masterNetOf(strategy.id, dto.exchange, dto.symbol, dto.productType);
-    const signedQty = dto.side === 'BUY' ? dto.quantity : -dto.quantity;
-    if (open !== 0 && Math.sign(signedQty) !== Math.sign(open) && dto.quantity > Math.abs(open)) dto.quantity = Math.abs(open);
-
-    const accounts = await this.prisma.brokerAccount.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'asc' } });
-    const account = dto.brokerAccountId
-      ? accounts.find((a) => a.id === dto.brokerAccountId)
-      : (accounts.find((a) => a.broker !== 'MOCK' && a.status === 'CONNECTED') ?? accounts.find((a) => a.broker === 'MOCK') ?? accounts[0]);
-    if (!account) throw new BadRequestException('Connect a broker account first.');
-
-    // The master's broker account is DATA_ONLY: the platform NEVER places orders on it. A master order from the
-    // platform is a SIGNAL that is mirrored to the followers only.
-    const isSignal = account.mode === 'DATA_ONLY' || this.trading.isSimulated(account);
-    const price = dto.price ?? this.prices.get(instrumentKey(dto.exchange, dto.symbol)) ?? null;
-    this.feed.ensure(dto.exchange, dto.symbol);
-    if (this.trading.isSimulated(account) && price == null) throw new BadRequestException('Live price unavailable — enter a price for this paper trade.');
-
-    let brokerOrderId: string;
-    if (isSignal) {
-      brokerOrderId = `SIG-${generateToken(9)}`;
-    } else {
-      try {
-        this.trading.assertOrderAllowed(account);
-        ({ brokerOrderId } = await (await this.trading.adapterFor(account)).placeOrder({ ...dto, tag: 'ctpmaster' }));
-        await this.poller.markSeen(account.id, brokerOrderId);
-      } catch (err) {
-        if (err instanceof BrokerApiError) throw new BadRequestException(await this.trading.handleBrokerError(account, err));
-        throw err;
-      }
-    }
-    // Signal book: the master's own (virtual) position, for display.
-    if (isSignal && price != null) await this.engine.applyPaperFill(user.id, account.id, dto, dto.quantity, price);
-
-    const summary = await this.engine.onMasterTrade(strategy, account, {
-      ...dto,
-      brokerOrderId,
-      filledQuantity: isSignal ? dto.quantity : 0,
-      averagePrice: isSignal ? price : null,
-      price,
-      status: isSignal ? 'FILLED' : 'SUBMITTED',
-      timestamp: new Date(),
-      lotSize: dto.lotSize,
-      targetPrice: dto.targetPrice ?? null,
-      stopLossPrice: dto.stopLossPrice ?? null,
-      exitReason: 'MASTER_EXIT',
-    });
-    if (!summary) throw new BadRequestException('Duplicate order ignored.');
-    if (dto.targetPrice != null || dto.stopLossPrice != null) this.signals.refreshWatch();
+    const summary = await this.orders.place(user.id, strategy, dto);
     return { ...(await this.trade(user, summary.tradeId)), fanOutMs: summary.totalMs };
+  }
+
+  // --------------------------------------------------------------- TradingView / alert webhook
+
+  /** Webhook of one of my strategies: URL (when on) and the last alerts with their result. Master only (the URL is a secret). */
+  @Get('strategies/:id/webhook')
+  async webhook(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    if (user.actorId) throw new ForbiddenException('Only the master can see the webhook');
+    const s = await this.own(user, id);
+    return { enabled: !!s.webhookToken, url: s.webhookToken ? this.hooks.url(s.webhookToken) : null, recent: await this.hooks.recent(s.id) };
+  }
+
+  /** Turns the webhook on, or gives it a new secret URL (the old URL stops working). */
+  @HttpCode(HttpStatus.OK)
+  @Post('strategies/:id/webhook')
+  async webhookRotate(@CurrentUser() user: RequestUser, @Param('id') id: string, @Req() req: Request) {
+    if (user.actorId) throw new ForbiddenException('Only the master can change the webhook');
+    const s = await this.own(user, id);
+    const token = await this.hooks.rotate(s.id);
+    await this.audit.log({ action: 'PROFILE_UPDATED', actorUserId: user.id, targetType: 'Strategy', targetId: s.id, metadata: { webhook: s.webhookToken ? 'rotated' : 'enabled' }, client: clientInfo(req) });
+    return { enabled: true, url: this.hooks.url(token), recent: await this.hooks.recent(s.id) };
+  }
+
+  @Delete('strategies/:id/webhook')
+  async webhookDisable(@CurrentUser() user: RequestUser, @Param('id') id: string, @Req() req: Request) {
+    if (user.actorId) throw new ForbiddenException('Only the master can change the webhook');
+    const s = await this.own(user, id);
+    await this.hooks.disable(s.id);
+    await this.audit.log({ action: 'PROFILE_UPDATED', actorUserId: user.id, targetType: 'Strategy', targetId: s.id, metadata: { webhook: 'disabled' }, client: clientInfo(req) });
+    return { enabled: false, url: null, recent: await this.hooks.recent(s.id) };
   }
 
   /**

@@ -285,6 +285,33 @@ export class SignalService implements OnApplicationBootstrap, OnModuleDestroy {
   }
 
   /**
+   * Strategy-scoped exit (automation): squares off this strategy's open signals whose instrument matches, then
+   * any untracked net position of the strategy that matches. Other strategies of the master are not touched.
+   */
+  async exitStrategyMatching(
+    strategyId: string,
+    actorUserId: string,
+    match: (p: { exchange: Exchange; symbol: string }) => boolean,
+  ): Promise<{ closed: number; failed: number; errors: string[] }> {
+    const open = await this.prisma.masterTrade.findMany({ where: { strategyId, signalStatus: 'OPEN' }, select: { id: true, exchange: true, symbol: true } });
+    const ids = open.filter((o) => match(o)).map((o) => o.id);
+    const out = ids.length ? await this.squareOffWhere({ id: { in: ids } }, 'SQUARE_OFF', actorUserId) : { closed: 0, failed: 0, errors: [] as string[] };
+    const strategy = await this.prisma.strategy.findUnique({ where: { id: strategyId } });
+    if (!strategy) return out;
+    for (const p of this.registry.masterPositions(strategyId)) {
+      if (!match(p)) continue;
+      try {
+        if (await this.exitMasterNet(strategy.id, strategy.masterUserId, p, 'SQUARE_OFF')) out.closed++;
+      } catch (err) {
+        out.failed++;
+        out.errors.push(`${p.symbol}: ${(err as Error).message}`);
+      }
+    }
+    this.refreshWatch();
+    return out;
+  }
+
+  /**
    * "Exit" on one row of the master's signal book: squares off every open signal of that instrument (each one
    * separately, for master + followers), exits any untracked remainder through the copy engine, and finally
    * closes whatever is still left in the master's virtual book at LTP. Other instruments are not touched.
