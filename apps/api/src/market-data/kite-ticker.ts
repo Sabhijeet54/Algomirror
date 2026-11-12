@@ -27,13 +27,13 @@ export class KiteTicker extends EventEmitter {
       if (this.tokens.size) this.sendSubscribe([...this.tokens]);
     };
     ws.onclose = (e) => this.emit('close', `${e.code} ${e.reason || ''}`.trim());
-    ws.onerror = () => this.emit('error', new Error('KiteTicker socket error'));
+    ws.onerror = () => this.safeError(new Error('KiteTicker socket error'));
     ws.onmessage = (e) => {
       this.emit('message');
       if (typeof e.data === 'string') {
         try {
           const m = JSON.parse(e.data) as { type?: string; data?: unknown };
-          if (m.type === 'error') this.emit('error', new Error(String(m.data)));
+          if (m.type === 'error') this.safeError(new Error(String(m.data)));
         } catch {
           /* ignore */
         }
@@ -78,10 +78,25 @@ export class KiteTicker extends EventEmitter {
     this.ws!.send(JSON.stringify({ a: 'mode', v: ['ltp', tokens] }));
   }
 
+  /**
+   * An EventEmitter 'error' with no listener throws, and from a socket callback that kills the whole API
+   * process. close() drops our listeners, and the socket still fires onerror while closing, so guard it.
+   */
+  private safeError(err: Error): void {
+    if (this.listenerCount('error') > 0) this.emit('error', err);
+  }
+
   close(): void {
     this.removeAllListeners();
+    const ws = this.ws;
+    this.ws = undefined;
+    if (!ws) return;
+    ws.onopen = null;
+    ws.onmessage = null;
+    ws.onclose = null;
+    ws.onerror = null;
     try {
-      this.ws?.close();
+      ws.close();
     } catch {
       /* ignore */
     }

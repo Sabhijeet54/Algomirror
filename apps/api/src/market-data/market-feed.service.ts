@@ -42,6 +42,12 @@ export class MarketFeedService implements OnApplicationBootstrap, OnModuleDestro
   private angel?: AngelFeed;
   private angelAdapter?: AngelOneAdapter;
   private readonly missingLogged = new Set<string>();
+  /**
+   * Keys that failed to resolve → retry-after (ms). The Place-trade box asks for prices while the script is
+   * typed ("NSE:B", "NSE:BA"…); each miss cost an Angel searchScrip call (≈1/s rate limit) and was saved to
+   * the persistent list, so every restart re-tried them all before the real contracts got ticks.
+   */
+  private readonly badKeys = new Map<string, number>();
   private account?: BrokerAccount;
   private state: MarketFeedStatus['state'] = 'STOPPED';
   private error: string | null = null;
@@ -128,10 +134,20 @@ export class MarketFeedService implements OnApplicationBootstrap, OnModuleDestro
   /** Adds instruments ("NSE:INFY") to the persistent subscription list and the live socket. */
   async subscribe(keys: string[]): Promise<void> {
     const norm = keys.map((k) => k.trim().toUpperCase()).filter((k) => /^[A-Z]+:.+$/.test(k));
-    const fresh = norm.filter((k) => !this.subscribed.has(k));
+    const now = Date.now();
+    const fresh = norm.filter((k) => !this.subscribed.has(k) && (this.badKeys.get(k) ?? 0) <= now);
     if (!fresh.length) return;
-    await this.redis.sadd(SUBS_KEY, ...fresh);
-    await this.subscribeLive(fresh);
+    // No socket yet: keep them (start() validates the saved list). Otherwise save only what resolved.
+    const keep = this.kite || this.angel ? await this.subscribeLive(fresh) : fresh;
+    if (keep.length) await this.redis.sadd(SUBS_KEY, ...keep);
+  }
+
+  /** Remember a key that did not resolve; unknown symbols also leave the persistent list. */
+  private markBad(k: string, err?: string): void {
+    const transient = !!err && /rate limit|access rate|timeout|timed out|network|ECONN|socket/i.test(err);
+    this.badKeys.set(k, Date.now() + (transient ? 60_000 : 30 * 60_000));
+    if (!transient) void this.redis.srem(SUBS_KEY, k).catch(() => undefined);
+    if (this.badKeys.size > 5_000) this.badKeys.clear();
   }
 
   async unsubscribe(keys: string[]): Promise<void> {
@@ -277,8 +293,10 @@ export class MarketFeedService implements OnApplicationBootstrap, OnModuleDestro
     });
   }
 
-  private async subscribeLive(keys: string[]): Promise<void> {
-    if (!keys.length || !this.account) return;
+  /** Subscribes on the live socket; returns the keys that resolved. */
+  private async subscribeLive(keys: string[]): Promise<string[]> {
+    const ok: string[] = [];
+    if (!keys.length || !this.account) return ok;
     if (this.kite) {
       const token = await this.sessions.decryptAccess(this.account);
       const exchanges = [...new Set(keys.map((k) => k.split(':')[0]!))];
@@ -292,10 +310,12 @@ export class MarketFeedService implements OnApplicationBootstrap, OnModuleDestro
             this.missingLogged.add(k);
             this.logger.warn(`Kite feed: no instrument for ${k} (not in today's Zerodha ${ex} list)`);
           }
+          this.markBad(k);
           continue;
         }
         this.tokenToKey.set(`Z:${inst.token}`, k);
         this.subscribed.add(k);
+        ok.push(k);
         toks.push(inst.token);
       }
       if (toks.length) this.kite.subscribe(toks);
@@ -303,17 +323,26 @@ export class MarketFeedService implements OnApplicationBootstrap, OnModuleDestro
       for (const k of keys) {
         const [ex, ...rest] = k.split(':');
         const exType = ANGEL_EXCHANGE_TYPE[ex!];
-        if (!exType) continue;
+        if (!exType || (this.badKeys.get(k) ?? 0) > Date.now()) continue;
+        if (!this.angel) break; // feed torn down meanwhile
         try {
           const inst = await this.angelAdapter.resolve(ex as Exchange, rest.join(':'));
           this.tokenToKey.set(`A:${exType}:${inst.token}`, k);
           this.subscribed.add(k);
+          if (!this.angel) break;
           this.angel.subscribe(exType, [inst.token]);
+          ok.push(k);
         } catch (err) {
-          this.logger.warn(`Angel subscribe ${k} failed: ${(err as Error).message}`);
+          const msg = (err as Error).message;
+          if (!this.missingLogged.has(k)) {
+            this.missingLogged.add(k);
+            this.logger.warn(`Angel subscribe ${k} failed: ${msg}`);
+          }
+          this.markBad(k, msg);
         }
       }
     }
+    return ok;
   }
 
   private teardownSockets(): void {

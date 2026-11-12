@@ -37,7 +37,7 @@ export class AngelFeed extends EventEmitter {
       if (this.ping) clearInterval(this.ping);
       this.emit('close', `${e.code} ${e.reason || ''}`.trim());
     };
-    ws.onerror = () => this.emit('error', new Error('SmartStream socket error'));
+    ws.onerror = () => this.safeError(new Error('SmartStream socket error'));
     ws.onmessage = (e) => {
       this.emit('message');
       if (typeof e.data === 'string') return; // "pong" / errors
@@ -68,11 +68,26 @@ export class AngelFeed extends EventEmitter {
     this.ws!.send(JSON.stringify({ correlationID: 'ctpfeed', action, params: { mode: 1, tokenList: [{ exchangeType, tokens }] } }));
   }
 
+  /**
+   * An EventEmitter 'error' with no listener throws, and from a socket callback that kills the whole API
+   * process. close() drops our listeners, and the socket still fires onerror while closing, so guard it.
+   */
+  private safeError(err: Error): void {
+    if (this.listenerCount('error') > 0) this.emit('error', err);
+  }
+
   close(): void {
     if (this.ping) clearInterval(this.ping);
     this.removeAllListeners();
+    const ws = this.ws;
+    this.ws = undefined;
+    if (!ws) return;
+    ws.onopen = null;
+    ws.onmessage = null;
+    ws.onclose = null;
+    ws.onerror = null;
     try {
-      this.ws?.close();
+      ws.close();
     } catch {
       /* ignore */
     }

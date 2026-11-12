@@ -149,7 +149,20 @@ export function SignalForm({ strategies }: { strategies: StrategyView[] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [catalog, kind, f.expiry, strikes.length]);
   const inst = buildInstrument(f.segment, f.script, f.expiry, f.strike, f.opt);
-  const ltp = useLtps(inst ? [`${inst.exchange}:${inst.symbol}`] : []).data?.[inst ? `${inst.exchange}:${inst.symbol}`.toUpperCase() : '']?.ltp ?? null;
+  // Ask for a live price only for a finished contract: every key asked for is subscribed on the shared feed,
+  // so half-typed scripts ("NSE:B", "NSE:BA"…) or a stale expiry/strike after a segment switch flooded it.
+  const [typedScript, setTypedScript] = useState(f.script);
+  useEffect(() => {
+    const t = setTimeout(() => setTypedScript(f.script), 700);
+    return () => clearTimeout(t);
+  }, [f.script]);
+  const priceable =
+    !!inst &&
+    (derivative
+      ? catalog && !!selExpiry && (kind === 'FUT' || strikes.includes(Number(f.strike)))
+      : typedScript === f.script && f.script.trim().length >= 2);
+  const ltpKey = priceable && inst ? `${inst.exchange}:${inst.symbol}`.toUpperCase() : '';
+  const ltp = useLtps(ltpKey ? [ltpKey] : []).data?.[ltpKey]?.ltp ?? null;
   const lotSize = derivative ? Number(f.lotSize) || 0 : 1;
   const quantity = (Number(f.lots) || 0) * (derivative ? lotSize : 1);
   // My open position in this exact contract (open signals of the selected strategy).
