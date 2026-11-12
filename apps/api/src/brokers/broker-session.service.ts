@@ -138,7 +138,11 @@ export class BrokerSessionService {
   /** One-time use: the state is deleted as it is read. */
   async consumeState(state: string | undefined, broker: BrokerName): Promise<string> {
     if (!state || state.length > 128) throw new BadRequestException('Missing login state. Please start the broker login again.');
-    const raw = await this.redis.getdel(stateKey(state));
+    // GET + DEL in one MULTI (atomic) rather than GETDEL, which needs Redis ≥ 6.2 — the Oracle VM runs 6.0
+    // and every Zerodha login failed with "ERR unknown command 'getdel'".
+    const key = stateKey(state);
+    const res = await this.redis.multi().get(key).del(key).exec();
+    const raw = (res?.[0]?.[1] as string | null | undefined) ?? null;
     if (!raw) throw new BadRequestException('Broker login expired. Please start again.');
     const parsed = JSON.parse(raw) as { userId: string; broker: BrokerName };
     if (parsed.broker !== broker) throw new BadRequestException('Broker login state mismatch.');
