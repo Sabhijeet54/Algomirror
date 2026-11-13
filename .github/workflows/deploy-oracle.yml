@@ -1,0 +1,59 @@
+# Push to main → unit tests + typecheck → deploy to the Oracle VM (cryptocraft.co.in).
+# One-time setup: repo Settings → Secrets and variables → Actions → New repository secret
+#   ORACLE_SSH_KEY = the full contents of the VM's SSH private key file.
+name: Deploy to Oracle
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+# Never two deploys at once; a newer push waits for the running one.
+concurrency:
+  group: oracle-deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      TARGET: ubuntu@137.23.35.238
+      DOMAIN: cryptocraft.co.in
+    steps:
+      - uses: actions/checkout@v4
+      - name: SSH key
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          if [ -z "$ORACLE_SSH_KEY" ]; then echo "::error::Add the ORACLE_SSH_KEY secret (repo Settings → Secrets → Actions)"; exit 1; fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle.key
+          chmod 600 ~/.ssh/oracle.key
+      - name: Deploy
+        run: bash deploy/oracle/deploy.sh "$TARGET" ~/.ssh/oracle.key "$DOMAIN"
+      - name: Health check
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "https://$DOMAIN/api/health" || true)
+            [ "$code" = "200" ] && echo "Healthy" && exit 0
+            sleep 10
+          done
+          echo "::error::https://$DOMAIN/api/health did not return 200"; exit 1
+      - name: Remove key
+        if: always()
+        run: rm -f ~/.ssh/oracle.key
