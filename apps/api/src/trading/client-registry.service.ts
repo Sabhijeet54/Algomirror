@@ -1,29 +1,16 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  OnApplicationBootstrap,
-  OnModuleDestroy,
-} from "@nestjs/common";
-import type { Subscription } from "rxjs";
-import type {
-  AllocationMode,
-  BrokerAccount,
-  BrokerName,
-  Exchange,
-  PrismaClient,
-  ProductType,
-} from "@ctp/database";
-import { startOfTradingDayIST } from "../admin/admin.service";
-import { warmConnection } from "../brokers/broker-http";
-import { BrokerSessionService } from "../brokers/broker-session.service";
-import { PRISMA } from "../common/prisma/prisma.service";
-import { API_CONFIG, ApiConfig } from "../config/config.module";
-import { AccountEvents } from "../realtime/account-events";
-import { ADAPTERS, overridesFrom } from "./adapter-factory";
-import type { BrokerAdapter } from "./broker-adapter";
-import type { QtySettings, QtyStrategy } from "./copy-quantity";
-import { TradingService } from "./trading.service";
+import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
+import type { Subscription } from 'rxjs';
+import type { AllocationMode, BrokerAccount, BrokerName, Exchange, PrismaClient, ProductType } from '@ctp/database';
+import { startOfTradingDayIST } from '../admin/admin.service';
+import { warmConnection } from '../brokers/broker-http';
+import { BrokerSessionService } from '../brokers/broker-session.service';
+import { PRISMA } from '../common/prisma/prisma.service';
+import { API_CONFIG, ApiConfig } from '../config/config.module';
+import { AccountEvents } from '../realtime/account-events';
+import { ADAPTERS, overridesFrom } from './adapter-factory';
+import type { BrokerAdapter } from './broker-adapter';
+import type { QtySettings, QtyStrategy } from './copy-quantity';
+import { TradingService } from './trading.service';
 
 export interface ClientSettings extends QtySettings {
   allocationMode: AllocationMode;
@@ -74,14 +61,8 @@ export interface DayState {
   breached: boolean;
 }
 
-const istDay = () =>
-  new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
-const posKey = (
-  owner: string,
-  exchange: string,
-  symbol: string,
-  product: ProductType,
-) => `${owner}|${exchange}:${symbol}|${product}`;
+const istDay = () => new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
+const posKey = (owner: string, exchange: string, symbol: string, product: ProductType) => `${owner}|${exchange}:${symbol}|${product}`;
 const N = (v: unknown) => (v == null ? null : Number(v));
 
 /**
@@ -91,10 +72,8 @@ const N = (v: unknown) => (v == null ? null : Number(v));
  * The copy engine's hot path reads only from here — no DB, no decryption, no quote calls.
  */
 @Injectable()
-export class ClientRegistryService
-  implements OnApplicationBootstrap, OnModuleDestroy
-{
-  private readonly logger = new Logger("ClientRegistry");
+export class ClientRegistryService implements OnApplicationBootstrap, OnModuleDestroy {
+  private readonly logger = new Logger('ClientRegistry');
   private byStrategy = new Map<string, ClientEntry[]>();
   private skippedByStrategy = new Map<string, SkippedClient[]>();
   private strategies = new Map<string, StrategyInfo>();
@@ -102,7 +81,7 @@ export class ClientRegistryService
   /** follower net copy positions (followerId|EX:SYM|PRODUCT) and master net positions (strategyId|…) */
   private readonly netPos = new Map<string, number>();
   private readonly masterNet = new Map<string, number>();
-  private seededDay = "";
+  private seededDay = '';
   private reloadTimer?: NodeJS.Timeout;
   private refresh?: NodeJS.Timeout;
   private warm?: NodeJS.Timeout;
@@ -119,20 +98,14 @@ export class ClientRegistryService
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
-    if (this.config.NODE_ENV === "test") return;
+    if (this.config.NODE_ENV === 'test') return;
     this.sub = this.accountEvents.events$.subscribe((e) => {
       // Disconnect/expiry must take effect immediately, before the debounced reload finishes.
-      if (e.type === "disconnected" || e.type === "expired")
-        this.evictAccount(e.brokerAccountId, `Broker account ${e.type}`);
+      if (e.type === 'disconnected' || e.type === 'expired') this.evictAccount(e.brokerAccountId, `Broker account ${e.type}`);
       this.scheduleReload();
     });
-    await this.reload().catch((err) =>
-      this.logger.error(`Initial load failed: ${(err as Error).message}`),
-    );
-    this.refresh = setInterval(
-      () => void this.reload().catch(() => undefined),
-      60_000,
-    );
+    await this.reload().catch((err) => this.logger.error(`Initial load failed: ${(err as Error).message}`));
+    this.refresh = setInterval(() => void this.reload().catch(() => undefined), 60_000);
     this.warm = setInterval(() => this.warmConnections(), 30_000);
     this.warmConnections();
   }
@@ -168,96 +141,40 @@ export class ClientRegistryService
     return d;
   }
 
-  clientNet(
-    followerId: string,
-    ex: string,
-    sym: string,
-    product: ProductType,
-  ): number {
+  clientNet(followerId: string, ex: string, sym: string, product: ProductType): number {
     return this.netPos.get(posKey(followerId, ex, sym, product)) ?? 0;
   }
-  applyClientFill(
-    followerId: string,
-    ex: string,
-    sym: string,
-    product: ProductType,
-    signedQty: number,
-  ): void {
+  applyClientFill(followerId: string, ex: string, sym: string, product: ProductType, signedQty: number): void {
     const k = posKey(followerId, ex, sym, product);
     this.netPos.set(k, (this.netPos.get(k) ?? 0) + signedQty);
   }
   /** Non-zero net copy positions of a follower (for exit-all). */
-  clientPositions(
-    followerId: string,
-  ): {
-    exchange: Exchange;
-    symbol: string;
-    productType: ProductType;
-    qty: number;
-  }[] {
-    const out: {
-      exchange: Exchange;
-      symbol: string;
-      productType: ProductType;
-      qty: number;
-    }[] = [];
+  clientPositions(followerId: string): { exchange: Exchange; symbol: string; productType: ProductType; qty: number }[] {
+    const out: { exchange: Exchange; symbol: string; productType: ProductType; qty: number }[] = [];
     for (const [k, q] of this.netPos) {
       if (!q || !k.startsWith(`${followerId}|`)) continue;
-      const [, inst, product] = k.split("|");
-      const [ex, ...sym] = inst!.split(":");
-      out.push({
-        exchange: ex as Exchange,
-        symbol: sym.join(":"),
-        productType: product as ProductType,
-        qty: q,
-      });
+      const [, inst, product] = k.split('|');
+      const [ex, ...sym] = inst!.split(':');
+      out.push({ exchange: ex as Exchange, symbol: sym.join(':'), productType: product as ProductType, qty: q });
     }
     return out;
   }
   /** Non-zero master net positions of a strategy (for strategy exit / signal-book exit). */
-  masterPositions(
-    strategyId: string,
-  ): {
-    exchange: Exchange;
-    symbol: string;
-    productType: ProductType;
-    qty: number;
-  }[] {
-    const out: {
-      exchange: Exchange;
-      symbol: string;
-      productType: ProductType;
-      qty: number;
-    }[] = [];
+  masterPositions(strategyId: string): { exchange: Exchange; symbol: string; productType: ProductType; qty: number }[] {
+    const out: { exchange: Exchange; symbol: string; productType: ProductType; qty: number }[] = [];
     for (const [k, q] of this.masterNet) {
       if (!q || !k.startsWith(`${strategyId}|`)) continue;
-      const [, inst, product] = k.split("|");
-      const [ex, ...sym] = inst!.split(":");
-      out.push({
-        exchange: ex as Exchange,
-        symbol: sym.join(":"),
-        productType: product as ProductType,
-        qty: q,
-      });
+      const [, inst, product] = k.split('|');
+      const [ex, ...sym] = inst!.split(':');
+      out.push({ exchange: ex as Exchange, symbol: sym.join(':'), productType: product as ProductType, qty: q });
     }
     return out;
   }
 
-  masterNetOf(
-    strategyId: string,
-    ex: string,
-    sym: string,
-    product: ProductType,
-  ): number {
+  masterNetOf(strategyId: string, ex: string, sym: string, product: ProductType): number {
     return this.masterNet.get(posKey(strategyId, ex, sym, product)) ?? 0;
   }
-  applyMasterFill(
-    strategyId: string,
-    ex: string,
-    sym: string,
-    product: ProductType,
-    signedQty: number,
-  ): void {
+  applyMasterFill(strategyId: string, ex: string, sym: string, product: ProductType, signedQty: number): void {
     const k = posKey(strategyId, ex, sym, product);
     this.masterNet.set(k, (this.masterNet.get(k) ?? 0) + signedQty);
   }
@@ -272,45 +189,26 @@ export class ClientRegistryService
       this.byStrategy.set(sid, keep);
       this.skippedByStrategy.set(sid, [
         ...(this.skippedByStrategy.get(sid) ?? []),
-        ...gone.map((g) => ({
-          followerId: g.followerId,
-          userId: g.userId,
-          accountId,
-          broker: g.broker,
-          reason,
-          settings: g.settings,
-        })),
+        ...gone.map((g) => ({ followerId: g.followerId, userId: g.userId, accountId, broker: g.broker, reason, settings: g.settings })),
       ]);
     }
   }
 
   /** Position was exited outside the copy engine (manual exit / square-off): forget the net copy position. */
-  clearPosition(
-    followerIds: string[],
-    exchange: string,
-    symbol: string,
-    product: ProductType,
-  ): void {
-    for (const f of followerIds)
-      this.netPos.delete(posKey(f, exchange, symbol, product));
+  clearPosition(followerIds: string[], exchange: string, symbol: string, product: ProductType): void {
+    for (const f of followerIds) this.netPos.delete(posKey(f, exchange, symbol, product));
   }
 
   /** Removes a follower from copying immediately (copy OFF / loss limit). */
   evictFollower(followerId: string): void {
-    for (const [sid, list] of this.byStrategy)
-      this.byStrategy.set(
-        sid,
-        list.filter((e) => e.followerId !== followerId),
-      );
+    for (const [sid, list] of this.byStrategy) this.byStrategy.set(sid, list.filter((e) => e.followerId !== followerId));
   }
 
   scheduleReload(delayMs = 150): void {
     if (this.reloadTimer) clearTimeout(this.reloadTimer);
     this.reloadTimer = setTimeout(() => {
       this.reloadTimer = undefined;
-      void this.reload().catch((err) =>
-        this.logger.warn(`Reload failed: ${(err as Error).message}`),
-      );
+      void this.reload().catch((err) => this.logger.warn(`Reload failed: ${(err as Error).message}`));
     }, delayMs);
   }
 
@@ -323,14 +221,8 @@ export class ClientRegistryService
   private async doReload(): Promise<void> {
     const started = Date.now();
     const rows = await this.prisma.strategyFollower.findMany({
-      where: { copyStatus: "ON", strategy: { status: "ACTIVE" } },
-      include: {
-        brokerAccount: true,
-        strategy: true,
-        follower: {
-          select: { licenceExpiresAt: true, status: true, demo: true },
-        },
-      },
+      where: { copyStatus: 'ON', strategy: { status: 'ACTIVE' } },
+      include: { brokerAccount: true, strategy: true, follower: { select: { licenceExpiresAt: true, status: true, demo: true } } },
     });
     const now = Date.now();
     const byStrategy = new Map<string, ClientEntry[]>();
@@ -366,48 +258,35 @@ export class ClientRegistryService
       const skip = (reason: string) =>
         skipped.set(s.id, [
           ...(skipped.get(s.id) ?? []),
-          {
-            followerId: r.id,
-            userId: r.followerUserId,
-            accountId: a?.id ?? null,
-            broker: a?.broker ?? null,
-            reason,
-            settings,
-          },
+          { followerId: r.id, userId: r.followerUserId, accountId: a?.id ?? null, broker: a?.broker ?? null, reason, settings },
         ]);
-      if (r.follower.status !== "ACTIVE") {
-        skip("Client account disabled");
+      if (r.follower.status !== 'ACTIVE') {
+        skip('Client account disabled');
         continue;
       }
       // Licence: none assigned = allowed unless LICENCE_REQUIRED; an expired licence always stops copying.
       const lic = r.follower.licenceExpiresAt?.getTime() ?? null;
       if (lic !== null ? lic <= now : this.config.LICENCE_REQUIRED) {
-        skip(
-          lic !== null
-            ? "Licence expired — renew to resume copy trading"
-            : "No licence assigned",
-        );
+        skip(lic !== null ? 'Licence expired — renew to resume copy trading' : 'No licence assigned');
         continue;
       }
       if (!a) {
-        skip("No broker account selected");
+        skip('No broker account selected');
         continue;
       }
       // Demo licence: always paper, whatever the account switch says.
       const simulated = this.trading.isSimulated(a) || r.follower.demo;
       if (!simulated) {
-        if (a.mode === "DATA_ONLY") {
-          skip("Account is DATA_ONLY (master) — orders blocked");
+        if (a.mode === 'DATA_ONLY') {
+          skip('Account is DATA_ONLY (master) — orders blocked');
           continue;
         }
-        if (a.status !== "CONNECTED") {
-          skip(
-            `Broker ${a.status.toLowerCase()}${a.disconnectReason ? `: ${a.disconnectReason}` : ""}`,
-          );
+        if (a.status !== 'CONNECTED') {
+          skip(`Broker ${a.status.toLowerCase()}${a.disconnectReason ? `: ${a.disconnectReason}` : ''}`);
           continue;
         }
         if (a.tokenExpiresAt && a.tokenExpiresAt.getTime() <= now) {
-          skip("Broker token expired");
+          skip('Broker token expired');
           continue;
         }
       }
@@ -416,7 +295,7 @@ export class ClientRegistryService
         if (!adapters.has(a.id)) adapters.set(a.id, await this.buildAdapter(a));
         adapter = adapters.get(a.id) ?? null;
         if (!adapter) {
-          skip("Broker session unavailable");
+          skip('Broker session unavailable');
           continue;
         }
       }
@@ -442,10 +321,7 @@ export class ClientRegistryService
     this.strategies = strategies;
     this.loadedAt = Date.now();
     const n = rows.length;
-    if (n)
-      this.logger.debug?.(
-        `Registry: ${n} followers, ${[...byStrategy.values()].flat().length} ready, ${Date.now() - started} ms`,
-      );
+    if (n) this.logger.debug?.(`Registry: ${n} followers, ${[...byStrategy.values()].flat().length} ready, ${Date.now() - started} ms`);
   }
 
   private async buildAdapter(a: BrokerAccount): Promise<BrokerAdapter | null> {
@@ -454,14 +330,8 @@ export class ClientRegistryService
       if (!token) return null;
       const o = overridesFrom(await this.sessions.decryptExtra(a));
       // Live orders must leave from the client's registered static IP when the server requires it.
-      if (
-        this.config.REQUIRE_CLIENT_PROXY &&
-        !this.trading.isSimulated(a) &&
-        !o.proxyUrl
-      ) {
-        this.logger.warn(
-          `Account ${a.id} has no static-IP proxy — skipped (REQUIRE_CLIENT_PROXY)`,
-        );
+      if (this.config.REQUIRE_CLIENT_PROXY && !this.trading.isSimulated(a) && !o.proxyUrl) {
+        this.logger.warn(`Account ${a.id} has no static-IP proxy — skipped (REQUIRE_CLIENT_PROXY)`);
         return null;
       }
       return this.trading.buildAdapter(a, token, o);
@@ -478,95 +348,34 @@ export class ClientRegistryService
    */
   private async seedDay(): Promise<void> {
     const today = startOfTradingDayIST();
-    const oldestOpen = await this.prisma.masterTrade.findFirst({
-      where: { signalStatus: "OPEN", createdAt: { lt: today } },
-      orderBy: { createdAt: "asc" },
-      select: { createdAt: true },
-    });
+    const oldestOpen = await this.prisma.masterTrade.findFirst({ where: { signalStatus: 'OPEN', createdAt: { lt: today } }, orderBy: { createdAt: 'asc' }, select: { createdAt: true } });
     const since = oldestOpen ? oldestOpen.createdAt : today;
     const [orders, masters] = await Promise.all([
       this.prisma.copyOrder.findMany({
         where: {
           createdAt: { gte: since },
-          OR: [
-            {
-              status: {
-                in: ["SUBMITTED", "OPEN", "PARTIALLY_FILLED", "FILLED"],
-              },
-            },
-            {
-              status: { in: ["CANCELLED", "REJECTED"] },
-              filledQuantity: { gt: 0 },
-            },
-          ],
+          OR: [{ status: { in: ['SUBMITTED', 'OPEN', 'PARTIALLY_FILLED', 'FILLED'] } }, { status: { in: ['CANCELLED', 'REJECTED'] }, filledQuantity: { gt: 0 } }],
         },
-        select: {
-          strategyFollowerId: true,
-          exchange: true,
-          symbol: true,
-          productType: true,
-          side: true,
-          quantity: true,
-          filledQuantity: true,
-          status: true,
-          mirrored: true,
-          createdAt: true,
-        },
+        select: { strategyFollowerId: true, exchange: true, symbol: true, productType: true, side: true, quantity: true, filledQuantity: true, status: true, mirrored: true, createdAt: true },
       }),
       this.prisma.masterTrade.findMany({
         where: {
           createdAt: { gte: since },
           strategyId: { not: null },
-          OR: [
-            {
-              status: {
-                in: ["SUBMITTED", "OPEN", "PARTIALLY_FILLED", "FILLED"],
-              },
-            },
-            {
-              status: { in: ["CANCELLED", "REJECTED"] },
-              filledQuantity: { gt: 0 },
-            },
-          ],
+          OR: [{ status: { in: ['SUBMITTED', 'OPEN', 'PARTIALLY_FILLED', 'FILLED'] } }, { status: { in: ['CANCELLED', 'REJECTED'] }, filledQuantity: { gt: 0 } }],
         },
-        select: {
-          strategyId: true,
-          exchange: true,
-          symbol: true,
-          productType: true,
-          side: true,
-          quantity: true,
-          filledQuantity: true,
-          status: true,
-        },
+        select: { strategyId: true, exchange: true, symbol: true, productType: true, side: true, quantity: true, filledQuantity: true, status: true },
       }),
     ]);
     // Exits / resizes done outside the copy engine (manual exit, square-off, lot-multiplier change) — replayed in
     // time order with the copy orders so the net positions match what the client really holds.
     const manual = await this.prisma.auditLog.findMany({
-      where: {
-        createdAt: { gte: since },
-        OR: [
-          { action: "COPY_STOPPED", targetType: "BrokerAccount" },
-          { action: "PROFILE_UPDATED", targetType: "StrategyFollower" },
-        ],
-      },
-      select: {
-        targetId: true,
-        targetType: true,
-        metadata: true,
-        createdAt: true,
-      },
+      where: { createdAt: { gte: since }, OR: [{ action: 'COPY_STOPPED', targetType: 'BrokerAccount' }, { action: 'PROFILE_UPDATED', targetType: 'StrategyFollower' }] },
+      select: { targetId: true, targetType: true, metadata: true, createdAt: true },
     });
     const followersByAccount = new Map<string, string[]>();
-    for (const f of await this.prisma.strategyFollower.findMany({
-      where: { brokerAccountId: { not: null } },
-      select: { id: true, brokerAccountId: true },
-    })) {
-      followersByAccount.set(f.brokerAccountId!, [
-        ...(followersByAccount.get(f.brokerAccountId!) ?? []),
-        f.id,
-      ]);
+    for (const f of await this.prisma.strategyFollower.findMany({ where: { brokerAccountId: { not: null } }, select: { id: true, brokerAccountId: true } })) {
+      followersByAccount.set(f.brokerAccountId!, [...(followersByAccount.get(f.brokerAccountId!) ?? []), f.id]);
     }
     type M = {
       manualExit?: boolean;
@@ -584,103 +393,39 @@ export class ClientRegistryService
     this.masterNet.clear();
     this.days.clear();
     for (const o of orders) {
-      if (!o.mirrored && o.createdAt >= today)
-        this.day(o.strategyFollowerId).trades++;
+      if (!o.mirrored && o.createdAt >= today) this.day(o.strategyFollowerId).trades++;
       // Mirrored SL/target orders count only when filled; a normal order still pending counts in full.
-      const pendingNormal =
-        !o.mirrored &&
-        (o.status === "SUBMITTED" ||
-          o.status === "OPEN" ||
-          o.status === "PARTIALLY_FILLED");
+      const pendingNormal = !o.mirrored && (o.status === 'SUBMITTED' || o.status === 'OPEN' || o.status === 'PARTIALLY_FILLED');
       const q = pendingNormal ? o.quantity : o.filledQuantity;
       if (!q) continue;
-      events.push({
-        at: o.createdAt.getTime(),
-        run: () =>
-          this.applyClientFill(
-            o.strategyFollowerId,
-            o.exchange,
-            o.symbol,
-            o.productType,
-            o.side === "BUY" ? q : -q,
-          ),
-      });
+      events.push({ at: o.createdAt.getTime(), run: () => this.applyClientFill(o.strategyFollowerId, o.exchange, o.symbol, o.productType, o.side === 'BUY' ? q : -q) });
     }
     for (const a of manual) {
       const m = a.metadata as M | null;
       if (!m?.exchange || !m.symbol || !m.productType || !a.targetId) continue;
-      if (
-        m.manualExit &&
-        a.targetType === "BrokerAccount" &&
-        m.followerAdjust?.length
-      ) {
+      if (m.manualExit && a.targetType === 'BrokerAccount' && m.followerAdjust?.length) {
         const adj = m.followerAdjust;
-        events.push({
-          at: a.createdAt.getTime(),
-          run: () =>
-            adj.forEach((x) =>
-              this.applyClientFill(
-                x.followerId,
-                m.exchange!,
-                m.symbol!,
-                m.productType!,
-                x.qty,
-              ),
-            ),
-        });
-      } else if (m.manualExit && a.targetType === "BrokerAccount") {
-        events.push({
-          at: a.createdAt.getTime(),
-          run: () =>
-            this.clearPosition(
-              followersByAccount.get(a.targetId!) ?? [],
-              m.exchange!,
-              m.symbol!,
-              m.productType!,
-            ),
-        });
-      } else if (
-        m.manualAdjust &&
-        a.targetType === "StrategyFollower" &&
-        m.quantity
-      ) {
-        const signed = m.side === "SELL" ? -m.quantity : m.quantity;
-        events.push({
-          at: a.createdAt.getTime(),
-          run: () =>
-            this.applyClientFill(
-              a.targetId!,
-              m.exchange!,
-              m.symbol!,
-              m.productType!,
-              signed,
-            ),
-        });
+        events.push({ at: a.createdAt.getTime(), run: () => adj.forEach((x) => this.applyClientFill(x.followerId, m.exchange!, m.symbol!, m.productType!, x.qty)) });
+      } else if (m.manualExit && a.targetType === 'BrokerAccount') {
+        events.push({ at: a.createdAt.getTime(), run: () => this.clearPosition(followersByAccount.get(a.targetId!) ?? [], m.exchange!, m.symbol!, m.productType!) });
+      } else if (m.manualAdjust && a.targetType === 'StrategyFollower' && m.quantity) {
+        const signed = m.side === 'SELL' ? -m.quantity : m.quantity;
+        events.push({ at: a.createdAt.getTime(), run: () => this.applyClientFill(a.targetId!, m.exchange!, m.symbol!, m.productType!, signed) });
       }
     }
     events.sort((x, y) => x.at - y.at).forEach((e) => e.run());
     for (const m of masters) {
       // Platform-placed master orders not yet confirmed count in full; everything else counts what filled.
-      const q = m.status === "SUBMITTED" ? m.quantity : m.filledQuantity;
+      const q = m.status === 'SUBMITTED' ? m.quantity : m.filledQuantity;
       if (!q) continue;
-      this.applyMasterFill(
-        m.strategyId!,
-        m.exchange,
-        m.symbol,
-        m.productType,
-        m.side === "BUY" ? q : -q,
-      );
+      this.applyMasterFill(m.strategyId!, m.exchange, m.symbol, m.productType, m.side === 'BUY' ? q : -q);
     }
     this.seededDay = istDay();
   }
 
   /** Keeps TLS connections to each broker in use warm so the first order of the day is fast. */
   private warmConnections(): void {
-    const brokers = new Set(
-      this.allEntries()
-        .filter((e) => !e.simulated)
-        .map((e) => e.broker),
-    );
+    const brokers = new Set(this.allEntries().filter((e) => !e.simulated).map((e) => e.broker));
     for (const b of brokers) {
       const f = ADAPTERS[b];
       if (f) void warmConnection(f.origin, f.proxyUrl?.(this.config));

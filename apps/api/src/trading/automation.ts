@@ -8,10 +8,10 @@ export class AutomationError extends Error {}
 
 export interface ScheduleLeg {
   underlying: string;
-  option: "CE" | "PE" | "FUT";
+  option: 'CE' | 'PE' | 'FUT';
   /** ATM offset in strikes (0 = ATM, 1 = one strike above, -1 = one below). Ignored for FUT. */
   strike: number;
-  side: "BUY" | "SELL";
+  side: 'BUY' | 'SELL';
   lots: number;
 }
 
@@ -24,8 +24,8 @@ export interface AutomationSettings {
     exitTime: string | null;
     /** 1 = Monday … 5 = Friday */
     days: number[];
-    expiry: "nearest" | "next" | "monthly";
-    product: "INTRADAY" | "CARRY_FORWARD";
+    expiry: 'nearest' | 'next' | 'monthly';
+    product: 'INTRADAY' | 'CARRY_FORWARD';
     legs: ScheduleLeg[];
     targetPoints: number | null;
     stoplossPoints: number | null;
@@ -36,9 +36,9 @@ export interface AutomationSettings {
   reentry: { enabled: boolean; max: number };
   chartink: {
     enabled: boolean;
-    side: "BUY" | "SELL";
+    side: 'BUY' | 'SELL';
     qty: number;
-    product: "INTRADAY" | "DELIVERY";
+    product: 'INTRADAY' | 'DELIVERY';
     targetPct: number | null;
     stoplossPct: number | null;
     maxStocks: number;
@@ -48,11 +48,11 @@ export interface AutomationSettings {
 export const DEFAULT_AUTOMATION: AutomationSettings = {
   schedule: {
     enabled: false,
-    entryTime: "09:20",
-    exitTime: "15:15",
+    entryTime: '09:20',
+    exitTime: '15:15',
     days: [1, 2, 3, 4, 5],
-    expiry: "nearest",
-    product: "INTRADAY",
+    expiry: 'nearest',
+    product: 'INTRADAY',
     legs: [],
     targetPoints: null,
     stoplossPoints: null,
@@ -62,9 +62,9 @@ export const DEFAULT_AUTOMATION: AutomationSettings = {
   reentry: { enabled: false, max: 1 },
   chartink: {
     enabled: false,
-    side: "BUY",
+    side: 'BUY',
     qty: 1,
-    product: "INTRADAY",
+    product: 'INTRADAY',
     targetPct: null,
     stoplossPct: null,
     maxStocks: 5,
@@ -72,37 +72,26 @@ export const DEFAULT_AUTOMATION: AutomationSettings = {
 };
 
 type Obj = Record<string, unknown>;
-const obj = (v: unknown): Obj =>
-  v && typeof v === "object" && !Array.isArray(v) ? (v as Obj) : {};
+const obj = (v: unknown): Obj => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Obj) : {});
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 function posNum(v: unknown, what: string): number | null {
-  if (v == null || v === "") return null;
+  if (v == null || v === '') return null;
   const n = Number(v);
-  if (!Number.isFinite(n) || n <= 0)
-    throw new AutomationError(`${what} must be a positive number`);
+  if (!Number.isFinite(n) || n <= 0) throw new AutomationError(`${what} must be a positive number`);
   return n;
 }
 function posInt(v: unknown, what: string, def: number, max: number): number {
-  if (v == null || v === "") return def;
+  if (v == null || v === '') return def;
   const n = Number(v);
-  if (!Number.isInteger(n) || n < 1 || n > max)
-    throw new AutomationError(
-      `${what} must be a whole number from 1 to ${max}`,
-    );
+  if (!Number.isInteger(n) || n < 1 || n > max) throw new AutomationError(`${what} must be a whole number from 1 to ${max}`);
   return n;
 }
-function oneOf<T extends string>(
-  v: unknown,
-  allowed: readonly T[],
-  def: T,
-  what: string,
-): T {
-  if (v == null || v === "") return def;
+function oneOf<T extends string>(v: unknown, allowed: readonly T[], def: T, what: string): T {
+  if (v == null || v === '') return def;
   const s = String(v).toUpperCase();
   const hit = allowed.find((a) => a.toUpperCase() === s);
-  if (!hit)
-    throw new AutomationError(`${what} must be one of ${allowed.join(", ")}`);
+  if (!hit) throw new AutomationError(`${what} must be one of ${allowed.join(', ')}`);
   return hit;
 }
 
@@ -120,57 +109,33 @@ export function normalizeAutomation(input: unknown): AutomationSettings {
   const d = DEFAULT_AUTOMATION;
   const i = obj(input);
   const s = obj(i.schedule);
-  const entryTime =
-    s.entryTime == null || s.entryTime === ""
-      ? d.schedule.entryTime
-      : String(s.entryTime);
-  if (!TIME.test(entryTime))
-    throw new AutomationError("Entry time must be HH:MM (24 hour, IST)");
-  const exitTime =
-    s.exitTime == null || s.exitTime === "" ? null : String(s.exitTime);
-  if (exitTime && !TIME.test(exitTime))
-    throw new AutomationError("Exit time must be HH:MM (24 hour, IST)");
-  if (exitTime && exitTime <= entryTime)
-    throw new AutomationError("Exit time must be after the entry time");
-  const days = Array.isArray(s.days)
-    ? [...new Set(s.days.map(Number))]
-        .filter((n) => Number.isInteger(n) && n >= 1 && n <= 5)
-        .sort()
-    : d.schedule.days;
+  const entryTime = s.entryTime == null || s.entryTime === '' ? d.schedule.entryTime : String(s.entryTime);
+  if (!TIME.test(entryTime)) throw new AutomationError('Entry time must be HH:MM (24 hour, IST)');
+  const exitTime = s.exitTime == null || s.exitTime === '' ? null : String(s.exitTime);
+  if (exitTime && !TIME.test(exitTime)) throw new AutomationError('Exit time must be HH:MM (24 hour, IST)');
+  if (exitTime && exitTime <= entryTime) throw new AutomationError('Exit time must be after the entry time');
+  const days = Array.isArray(s.days) ? [...new Set(s.days.map(Number))].filter((n) => Number.isInteger(n) && n >= 1 && n <= 5).sort() : d.schedule.days;
   const legsIn = Array.isArray(s.legs) ? s.legs : [];
-  if (legsIn.length > 6) throw new AutomationError("At most 6 legs");
+  if (legsIn.length > 6) throw new AutomationError('At most 6 legs');
   const legs: ScheduleLeg[] = legsIn.map((raw, n) => {
     const l = obj(raw);
-    const underlying = String(l.underlying ?? "")
+    const underlying = String(l.underlying ?? '')
       .trim()
       .toUpperCase();
-    if (!/^[A-Z0-9&_-]{2,30}$/.test(underlying))
-      throw new AutomationError(
-        `Leg ${n + 1}: enter the underlying (e.g. NIFTY)`,
-      );
-    const strike = l.strike == null || l.strike === "" ? 0 : Number(l.strike);
-    if (!Number.isInteger(strike) || Math.abs(strike) > 20)
-      throw new AutomationError(
-        `Leg ${n + 1}: strike offset must be a whole number from -20 to 20`,
-      );
+    if (!/^[A-Z0-9&_-]{2,30}$/.test(underlying)) throw new AutomationError(`Leg ${n + 1}: enter the underlying (e.g. NIFTY)`);
+    const strike = l.strike == null || l.strike === '' ? 0 : Number(l.strike);
+    if (!Number.isInteger(strike) || Math.abs(strike) > 20) throw new AutomationError(`Leg ${n + 1}: strike offset must be a whole number from -20 to 20`);
     return {
       underlying,
-      option: oneOf(
-        l.option,
-        ["CE", "PE", "FUT"] as const,
-        "CE",
-        `Leg ${n + 1} option`,
-      ),
+      option: oneOf(l.option, ['CE', 'PE', 'FUT'] as const, 'CE', `Leg ${n + 1} option`),
       strike,
-      side: oneOf(l.side, ["BUY", "SELL"] as const, "BUY", `Leg ${n + 1} side`),
+      side: oneOf(l.side, ['BUY', 'SELL'] as const, 'BUY', `Leg ${n + 1} side`),
       lots: posInt(l.lots, `Leg ${n + 1} lots`, 1, 100),
     };
   });
   const enabled = s.enabled === true;
-  if (enabled && !legs.length)
-    throw new AutomationError("Add at least one leg to the schedule");
-  if (enabled && !days.length)
-    throw new AutomationError("Pick at least one day for the schedule");
+  if (enabled && !legs.length) throw new AutomationError('Add at least one leg to the schedule');
+  if (enabled && !days.length) throw new AutomationError('Pick at least one day for the schedule');
 
   const dl = obj(i.daily);
   const re = obj(i.reentry);
@@ -181,49 +146,35 @@ export function normalizeAutomation(input: unknown): AutomationSettings {
       entryTime,
       exitTime,
       days,
-      expiry:
-        (["nearest", "next", "monthly"] as const).find(
-          (e) => e === String(s.expiry ?? "").toLowerCase(),
-        ) ?? "nearest",
-      product: oneOf(
-        s.product,
-        ["INTRADAY", "CARRY_FORWARD"] as const,
-        "INTRADAY",
-        "Product",
-      ),
+      expiry: (['nearest', 'next', 'monthly'] as const).find((e) => e === String(s.expiry ?? '').toLowerCase()) ?? 'nearest',
+      product: oneOf(s.product, ['INTRADAY', 'CARRY_FORWARD'] as const, 'INTRADAY', 'Product'),
       legs,
-      targetPoints: posNum(s.targetPoints, "Target points"),
-      stoplossPoints: posNum(s.stoplossPoints, "Stop loss points"),
+      targetPoints: posNum(s.targetPoints, 'Target points'),
+      stoplossPoints: posNum(s.stoplossPoints, 'Stop loss points'),
     },
-    trailPoints: posNum(i.trailPoints, "Trailing stop loss points"),
+    trailPoints: posNum(i.trailPoints, 'Trailing stop loss points'),
     daily: {
-      maxLoss: posNum(dl.maxLoss, "Daily max loss"),
-      maxProfit: posNum(dl.maxProfit, "Daily max profit"),
+      maxLoss: posNum(dl.maxLoss, 'Daily max loss'),
+      maxProfit: posNum(dl.maxProfit, 'Daily max profit'),
     },
     reentry: {
       enabled: re.enabled === true,
-      max: posInt(re.max, "Re-entries", 1, 2),
+      max: posInt(re.max, 'Re-entries', 1, 2),
     },
     chartink: {
       enabled: ck.enabled === true,
-      side: oneOf(ck.side, ["BUY", "SELL"] as const, "BUY", "Chartink side"),
-      qty: posInt(ck.qty, "Chartink quantity", 1, 100_000),
-      product: oneOf(
-        ck.product,
-        ["INTRADAY", "DELIVERY"] as const,
-        "INTRADAY",
-        "Chartink product",
-      ),
-      targetPct: posNum(ck.targetPct, "Chartink target %"),
-      stoplossPct: posNum(ck.stoplossPct, "Chartink stop loss %"),
-      maxStocks: posInt(ck.maxStocks, "Chartink max stocks", 5, 50),
+      side: oneOf(ck.side, ['BUY', 'SELL'] as const, 'BUY', 'Chartink side'),
+      qty: posInt(ck.qty, 'Chartink quantity', 1, 100_000),
+      product: oneOf(ck.product, ['INTRADAY', 'DELIVERY'] as const, 'INTRADAY', 'Chartink product'),
+      targetPct: posNum(ck.targetPct, 'Chartink target %'),
+      stoplossPct: posNum(ck.stoplossPct, 'Chartink stop loss %'),
+      maxStocks: posInt(ck.maxStocks, 'Chartink max stocks', 5, 50),
     },
   };
 }
 
 /** Redis flag set when a strategy hits its daily max loss / profit: no new entries that IST day. */
-export const dailyHaltKey = (strategyId: string, date: string) =>
-  `ctp:auto:halt:${strategyId}:${date}`;
+export const dailyHaltKey = (strategyId: string, date: string) => `ctp:auto:halt:${strategyId}:${date}`;
 
 // ------------------------------------------------------------ time (IST)
 
@@ -256,21 +207,15 @@ export function isDue(at: string, hhmm: string): boolean {
 // ------------------------------------------------------------ schedule legs → alerts
 
 /** One schedule leg as a webhook alert body (parsed by parseAlert). */
-export function legAlert(
-  leg: ScheduleLeg,
-  s: AutomationSettings["schedule"],
-): Record<string, unknown> {
+export function legAlert(leg: ScheduleLeg, s: AutomationSettings['schedule']): Record<string, unknown> {
   return {
     action: leg.side,
     underlying: leg.underlying,
     option: leg.option,
-    ...(leg.option === "FUT"
+    ...(leg.option === 'FUT'
       ? {}
       : {
-          strike:
-            leg.strike === 0
-              ? "ATM"
-              : `ATM${leg.strike > 0 ? "+" : ""}${leg.strike}`,
+          strike: leg.strike === 0 ? 'ATM' : `ATM${leg.strike > 0 ? '+' : ''}${leg.strike}`,
         }),
     expiry: s.expiry,
     lots: leg.lots,
@@ -289,14 +234,14 @@ const tick05 = (n: number) => Math.round(n * 20) / 20;
  * anchor) by `step` in the same direction. Returns the new levels, or null when nothing moves.
  */
 export function trailStep(p: {
-  side: "BUY" | "SELL";
+  side: 'BUY' | 'SELL';
   stopLoss: number;
   anchor: number;
   step: number;
   ltp: number;
 }): { stopLoss: number; anchor: number } | null {
   if (!(p.step > 0)) return null;
-  const dir = p.side === "BUY" ? 1 : -1;
+  const dir = p.side === 'BUY' ? 1 : -1;
   const moves = Math.floor(((p.ltp - p.anchor) * dir) / p.step + 1e-9);
   if (moves < 1) return null;
   return {
@@ -308,7 +253,7 @@ export function trailStep(p: {
 // ------------------------------------------------------------ daily P&L of a strategy
 
 export interface DaySignal {
-  side: "BUY" | "SELL";
+  side: 'BUY' | 'SELL';
   entry: number | null;
   openQty: number;
   realizedPnl: number;
@@ -320,19 +265,15 @@ export function dayPnl(rows: DaySignal[]): number {
   let pnl = 0;
   for (const r of rows) {
     pnl += r.realizedPnl;
-    if (r.openQty > 0 && r.entry != null && r.ltp != null)
-      pnl += (r.ltp - r.entry) * r.openQty * (r.side === "BUY" ? 1 : -1);
+    if (r.openQty > 0 && r.entry != null && r.ltp != null) pnl += (r.ltp - r.entry) * r.openQty * (r.side === 'BUY' ? 1 : -1);
   }
   return Math.round(pnl * 100) / 100;
 }
 
 /** 'LOSS' / 'PROFIT' when the day's P&L reached a limit, else null. */
-export function dailyLimitHit(
-  pnl: number,
-  daily: AutomationSettings["daily"],
-): "LOSS" | "PROFIT" | null {
-  if (daily.maxLoss != null && pnl <= -daily.maxLoss) return "LOSS";
-  if (daily.maxProfit != null && pnl >= daily.maxProfit) return "PROFIT";
+export function dailyLimitHit(pnl: number, daily: AutomationSettings['daily']): 'LOSS' | 'PROFIT' | null {
+  if (daily.maxLoss != null && pnl <= -daily.maxLoss) return 'LOSS';
+  if (daily.maxProfit != null && pnl >= daily.maxProfit) return 'PROFIT';
   return null;
 }
 
@@ -347,19 +288,19 @@ export function parseChartink(body: unknown): {
   stocks: { symbol: string; price: number | null }[];
 } {
   let b: unknown = body;
-  if (typeof b === "string") {
+  if (typeof b === 'string') {
     try {
       b = JSON.parse(b);
     } catch {
-      throw new AutomationError("Chartink alert is not JSON");
+      throw new AutomationError('Chartink alert is not JSON');
     }
   }
   const o = obj(b);
-  const names = String(o.stocks ?? "")
-    .split(",")
+  const names = String(o.stocks ?? '')
+    .split(',')
     .map((x) => x.trim().toUpperCase());
-  const prices = String(o.trigger_prices ?? "")
-    .split(",")
+  const prices = String(o.trigger_prices ?? '')
+    .split(',')
     .map((x) => Number(x.trim()));
   const stocks = names
     .map((symbol, n) => ({
@@ -367,14 +308,13 @@ export function parseChartink(body: unknown): {
       price: Number.isFinite(prices[n]) && prices[n]! > 0 ? prices[n]! : null,
     }))
     .filter((x) => /^[A-Z0-9&_-]{1,40}$/.test(x.symbol));
-  if (!stocks.length) throw new AutomationError("Chartink alert has no stocks");
+  if (!stocks.length) throw new AutomationError('Chartink alert has no stocks');
   const seen = new Set<string>();
   return {
-    scan: String(o.scan_name ?? o.alert_name ?? "Chartink").slice(0, 80),
+    scan: String(o.scan_name ?? o.alert_name ?? 'Chartink').slice(0, 80),
     stocks: stocks.filter((x) => !seen.has(x.symbol) && seen.add(x.symbol)),
   };
 }
 
 /** % of a price → points (0.05 tick, at least one tick). */
-export const pctPoints = (price: number, pct: number) =>
-  Math.max(0.05, tick05((price * pct) / 100));
+export const pctPoints = (price: number, pct: number) => Math.max(0.05, tick05((price * pct) / 100));
