@@ -801,18 +801,27 @@ export interface ScheduleLeg {
   side: 'BUY' | 'SELL';
   lots: number;
 }
+export interface Schedule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  entryTime: string;
+  exitTime: string | null;
+  days: number[];
+  expiry: 'nearest' | 'next' | 'monthly';
+  product: 'INTRADAY' | 'CARRY_FORWARD';
+  legs: ScheduleLeg[];
+  targetPoints: number | null;
+  stoplossPoints: number | null;
+}
+/** A schedule with the strategy it trades in (Time entry / exit tab lists all strategies' schedules). */
+export interface ScheduleRow extends Schedule {
+  strategyId: string;
+  strategyName?: string;
+  strategyStatus?: string;
+}
 export interface AutomationSettings {
-  schedule: {
-    enabled: boolean;
-    entryTime: string;
-    exitTime: string | null;
-    days: number[];
-    expiry: 'nearest' | 'next' | 'monthly';
-    product: 'INTRADAY' | 'CARRY_FORWARD';
-    legs: ScheduleLeg[];
-    targetPoints: number | null;
-    stoplossPoints: number | null;
-  };
+  schedules: Schedule[];
   trailPoints: number | null;
   daily: { maxLoss: number | null; maxProfit: number | null };
   reentry: { enabled: boolean; max: number };
@@ -835,7 +844,26 @@ export const useStrategyAutomation = (id: string | null) =>
 export function useSaveAutomation(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (settings: AutomationSettings) => api<AutomationInfo>(`/master/strategies/${id}/automation`, { method: 'PUT', body: settings }),
+    // Schedules are saved from the Time entry / exit tab, so they are not sent here (the server keeps them).
+    mutationFn: (settings: Omit<AutomationSettings, 'schedules'>) => api<AutomationInfo>(`/master/strategies/${id}/automation`, { method: 'PUT', body: settings }),
     onSuccess: (data) => qc.setQueryData(['master', 'automation', id], data),
+  });
+}
+
+export const useAutomationSchedules = () =>
+  useQuery({
+    queryKey: ['master', 'automation-schedules'],
+    queryFn: () => api<ScheduleRow[]>('/master/automation/schedules'),
+    retry: false,
+  });
+
+export function useSaveSchedules() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (schedules: ScheduleRow[]) => api<ScheduleRow[]>('/master/automation/schedules', { method: 'PUT', body: { schedules } }),
+    onSuccess: (data) => {
+      qc.setQueryData(['master', 'automation-schedules'], data);
+      void qc.invalidateQueries({ queryKey: ['master', 'automation'] });
+    },
   });
 }

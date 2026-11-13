@@ -14,7 +14,18 @@ import { copy, WebhookCard } from '@/components/webhook-card';
 import { ApiError } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { useMasterStrategies, useSaveAutomation, useStrategyAutomation, useStrategyWebhook, type AutomationSettings, type ScheduleLeg } from '@/lib/trading';
+import type { StrategyView } from '@ctp/types';
+import {
+  useAutomationSchedules,
+  useMasterStrategies,
+  useSaveAutomation,
+  useSaveSchedules,
+  useStrategyAutomation,
+  useStrategyWebhook,
+  type AutomationSettings,
+  type ScheduleLeg,
+  type ScheduleRow,
+} from '@/lib/trading';
 
 const TABS = [
   { id: 'tv', label: 'TradingView' },
@@ -49,23 +60,6 @@ export default function AutomationPage() {
         </Card>
       ) : (
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <Label htmlFor="auto-strategy" className="shrink-0">
-              Strategy
-            </Label>
-            <div className="w-full max-w-xs">
-              <Select id="auto-strategy" value={sel.id} onChange={(e) => setSelected(e.target.value)}>
-                {list.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                    {s.status !== 'ACTIVE' ? ' (not active)' : ''}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            {sel.status !== 'ACTIVE' ? <span className="text-xs text-amber-600">Activate the strategy for automation to trade.</span> : null}
-          </div>
-
           <div className="flex gap-1 overflow-x-auto border-b" role="tablist">
             {TABS.map((t) => (
               <button
@@ -83,12 +77,19 @@ export default function AutomationPage() {
             ))}
           </div>
 
-          {tab === 'tv' ? (
-            <WebhookCard strategy={sel} />
-          ) : tab === 'log' ? (
-            <AlertLog strategyId={sel.id} />
+          {tab === 'schedule' ? (
+            <SchedulesTab strategies={list} />
           ) : (
-            <SettingsTab key={sel.id} strategyId={sel.id} tab={tab} />
+            <>
+              <StrategyPicker list={list} value={sel.id} onChange={setSelected} />
+              {tab === 'tv' ? (
+                <WebhookCard strategy={sel} />
+              ) : tab === 'log' ? (
+                <AlertLog strategyId={sel.id} />
+              ) : (
+                <SettingsTab key={sel.id} strategyId={sel.id} tab={tab} />
+              )}
+            </>
           )}
         </div>
       )}
@@ -96,9 +97,32 @@ export default function AutomationPage() {
   );
 }
 
+/** Which strategy this tab works on (each tab picks its own; Time entry picks one per schedule). */
+function StrategyPicker({ list, value, onChange }: { list: StrategyView[]; value: string; onChange: (id: string) => void }) {
+  const cur = list.find((s) => s.id === value);
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <Label htmlFor="auto-strategy" className="shrink-0">
+        Strategy (signals go into)
+      </Label>
+      <div className="w-full max-w-xs">
+        <Select id="auto-strategy" value={value} onChange={(e) => onChange(e.target.value)}>
+          {list.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+              {s.status !== 'ACTIVE' ? ' (not active)' : ''}
+            </option>
+          ))}
+        </Select>
+      </div>
+      {cur && cur.status !== 'ACTIVE' ? <span className="text-xs text-amber-600">Activate the strategy for automation to trade.</span> : null}
+    </div>
+  );
+}
+
 // ------------------------------------------------------------ settings tabs
 
-function SettingsTab({ strategyId, tab }: { strategyId: string; tab: Exclude<Tab, 'tv' | 'log'> }) {
+function SettingsTab({ strategyId, tab }: { strategyId: string; tab: Exclude<Tab, 'tv' | 'log' | 'schedule'> }) {
   const q = useStrategyAutomation(strategyId);
   const save = useSaveAutomation(strategyId);
   const [form, setForm] = useState<AutomationSettings | null>(null);
@@ -115,14 +139,16 @@ function SettingsTab({ strategyId, tab }: { strategyId: string; tab: Exclude<Tab
     setForm((f) => (f ? fn(structuredClone(f)) : f));
     setDirty(true);
   };
-  const submit = () =>
-    save.mutate(form, {
+  const submit = () => {
+    const { schedules: _schedules, ...rest } = form;
+    save.mutate(rest, {
       onSuccess: () => {
         setDirty(false);
         toast.success('Automation saved');
       },
       onError: (e) => toast.error((e as Error).message),
     });
+  };
 
   const saveBar = (
     <div className="flex items-center gap-3">
@@ -133,7 +159,6 @@ function SettingsTab({ strategyId, tab }: { strategyId: string; tab: Exclude<Tab
     </div>
   );
 
-  if (tab === 'schedule') return <ScheduleCard form={form} set={set} saveBar={saveBar} />;
   if (tab === 'chartink') return <ChartinkCard strategyId={strategyId} form={form} set={set} saveBar={saveBar} />;
 
   if (tab === 'trail') {
@@ -259,59 +284,153 @@ function SettingsTab({ strategyId, tab }: { strategyId: string; tab: Exclude<Tab
 
 type SetForm = (fn: (f: AutomationSettings) => AutomationSettings) => void;
 
-function ScheduleCard({ form, set, saveBar }: { form: AutomationSettings; set: SetForm; saveBar: React.ReactNode }) {
-  const s = form.schedule;
-  const setS = (patch: Partial<AutomationSettings['schedule']>) => set((f) => ({ ...f, schedule: { ...f.schedule, ...patch } }));
-  const setLeg = (i: number, patch: Partial<ScheduleLeg>) => setS({ legs: s.legs.map((l, n) => (n === i ? { ...l, ...patch } : l)) });
-  const straddle = () =>
-    setS({
-      legs: [
-        { underlying: 'NIFTY', option: 'CE', strike: 0, side: 'SELL', lots: 1 },
-        { underlying: 'NIFTY', option: 'PE', strike: 0, side: 'SELL', lots: 1 },
-      ],
+const newSchedule = (strategyId: string, n: number): ScheduleRow => ({
+  id: `s${Date.now().toString(36)}`,
+  name: `Schedule ${n}`,
+  strategyId,
+  enabled: false,
+  entryTime: '09:20',
+  exitTime: '15:15',
+  days: [1, 2, 3, 4, 5],
+  expiry: 'nearest',
+  product: 'INTRADAY',
+  legs: [],
+  targetPoints: null,
+  stoplossPoints: null,
+});
+
+/** Every timed entry / exit of all my strategies; each one picks the strategy its signals go into. */
+function SchedulesTab({ strategies }: { strategies: StrategyView[] }) {
+  const q = useAutomationSchedules();
+  const save = useSaveSchedules();
+  const [rows, setRows] = useState<ScheduleRow[] | null>(null);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    if (q.data && !dirty) setRows(q.data);
+  }, [q.data, dirty]);
+
+  if (q.error instanceof ApiError && q.error.status === 403) return <Notice text="Only the master can see and change automation." />;
+  if (!rows) return <Notice text={q.isLoading ? 'Loading…' : 'Could not load schedules.'} />;
+
+  const change = (next: ScheduleRow[]) => {
+    setRows(next);
+    setDirty(true);
+  };
+  const add = () => change([...rows, newSchedule(strategies[0]!.id, rows.length + 1)]);
+  const submit = () =>
+    save.mutate(rows, {
+      onSuccess: () => {
+        setDirty(false);
+        toast.success('Schedules saved');
+      },
+      onError: (e) => toast.error((e as Error).message),
     });
 
   return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Time entry / exit</CardTitle>
+              <CardDescription>
+                Add as many schedules as you need — e.g. 09:20 NIFTY straddle in one strategy and 11:00 BANKNIFTY in another. On the picked days each schedule trades
+                its legs at the entry time (IST) in its strategy, and at the exit time squares off only what it entered. Strike is picked from the live price at
+                entry (ATM ± strikes).
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={add}>
+                <Plus /> Add schedule
+              </Button>
+              <Button onClick={submit} disabled={save.isPending || !dirty}>
+                <Save /> Save all
+              </Button>
+            </div>
+          </div>
+          {dirty ? <span className="text-xs text-muted-foreground">Unsaved changes</span> : null}
+        </CardHeader>
+        {!rows.length ? (
+          <CardContent>
+            <p className="text-sm text-muted-foreground">No schedules yet — click Add schedule.</p>
+          </CardContent>
+        ) : null}
+      </Card>
+      {rows.map((r, i) => (
+        <ScheduleEditor
+          key={r.id}
+          s={r}
+          strategies={strategies}
+          onChange={(patch) => change(rows.map((x, n) => (n === i ? { ...x, ...patch } : x)))}
+          onRemove={() => confirm(`Delete "${r.name}"?`) && change(rows.filter((_, n) => n !== i))}
+        />
+      ))}
+      {rows.length ? (
+        <div className="flex items-center gap-3">
+          <Button onClick={submit} disabled={save.isPending || !dirty}>
+            <Save /> Save all
+          </Button>
+          {dirty ? <span className="text-xs text-muted-foreground">Unsaved changes</span> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ScheduleEditor({
+  s,
+  strategies,
+  onChange,
+  onRemove,
+}: {
+  s: ScheduleRow;
+  strategies: StrategyView[];
+  onChange: (patch: Partial<ScheduleRow>) => void;
+  onRemove: () => void;
+}) {
+  const setLeg = (i: number, patch: Partial<ScheduleLeg>) => onChange({ legs: s.legs.map((l, n) => (n === i ? { ...l, ...patch } : l)) });
+  const strategy = strategies.find((x) => x.id === s.strategyId);
+  return (
     <Card>
-      <CardHeader>
-        <CardTitle>Time entry / exit</CardTitle>
-        <CardDescription>
-          On the picked days, the legs below are traded at the entry time (IST) and every position of the strategy is squared off at the exit time. Strike is
-          picked from the live price at entry (ATM ± strikes).
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-5">
-        <Toggle checked={s.enabled} onChange={(v) => setS({ enabled: v })} label="Timed entry / exit on" />
+      <CardContent className="space-y-5 pt-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Toggle checked={s.enabled} onChange={(v) => onChange({ enabled: v })} label={s.enabled ? 'On' : 'Off'} />
+          <Button size="sm" variant="ghost" onClick={onRemove}>
+            <Trash2 /> Delete
+          </Button>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Strategy (signals go into)" hint={strategy && strategy.status !== 'ACTIVE' ? 'Not active — activate it for this schedule to trade.' : undefined}>
+            <Select value={s.strategyId} onChange={(e) => onChange({ strategyId: e.target.value })}>
+              {strategies.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                  {x.status !== 'ACTIVE' ? ' (not active)' : ''}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Name">
+            <Input value={s.name} maxLength={60} onChange={(e) => onChange({ name: e.target.value })} placeholder="e.g. 09:20 straddle" />
+          </Field>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Entry time (IST)">
-            <Input type="time" value={s.entryTime} onChange={(e) => setS({ entryTime: e.target.value })} />
+            <Input type="time" value={s.entryTime} onChange={(e) => onChange({ entryTime: e.target.value })} />
           </Field>
           <Field label="Exit time (IST)" hint="Empty = no timed exit">
-            <Input type="time" value={s.exitTime ?? ''} onChange={(e) => setS({ exitTime: e.target.value || null })} />
+            <Input type="time" value={s.exitTime ?? ''} onChange={(e) => onChange({ exitTime: e.target.value || null })} />
           </Field>
           <Field label="Expiry">
-            <Select
-              value={s.expiry}
-              onChange={(e) =>
-                setS({
-                  expiry: e.target.value as AutomationSettings['schedule']['expiry'],
-                })
-              }
-            >
+            <Select value={s.expiry} onChange={(e) => onChange({ expiry: e.target.value as ScheduleRow['expiry'] })}>
               <option value="nearest">Nearest</option>
               <option value="next">Next</option>
               <option value="monthly">Monthly</option>
             </Select>
           </Field>
           <Field label="Product">
-            <Select
-              value={s.product}
-              onChange={(e) =>
-                setS({
-                  product: e.target.value as AutomationSettings['schedule']['product'],
-                })
-              }
-            >
+            <Select value={s.product} onChange={(e) => onChange({ product: e.target.value as ScheduleRow['product'] })}>
               <option value="INTRADAY">Intraday (MIS)</option>
               <option value="CARRY_FORWARD">Carry forward (NRML)</option>
             </Select>
@@ -325,16 +444,7 @@ function ScheduleCard({ form, set, saveBar }: { form: AutomationSettings; set: S
               const day = i + 1;
               const on = s.days.includes(day);
               return (
-                <Button
-                  key={d}
-                  size="sm"
-                  variant={on ? 'default' : 'outline'}
-                  onClick={() =>
-                    setS({
-                      days: on ? s.days.filter((x) => x !== day) : [...s.days, day].sort(),
-                    })
-                  }
-                >
+                <Button key={d} size="sm" variant={on ? 'default' : 'outline'} onClick={() => onChange({ days: on ? s.days.filter((x) => x !== day) : [...s.days, day].sort() })}>
                   {d}
                 </Button>
               );
@@ -346,27 +456,25 @@ function ScheduleCard({ form, set, saveBar }: { form: AutomationSettings; set: S
           <div className="flex flex-wrap items-center justify-between gap-2">
             <Label>Legs</Label>
             <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={straddle}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  onChange({
+                    legs: [
+                      { underlying: 'NIFTY', option: 'CE', strike: 0, side: 'SELL', lots: 1 },
+                      { underlying: 'NIFTY', option: 'PE', strike: 0, side: 'SELL', lots: 1 },
+                    ],
+                  })
+                }
+              >
                 NIFTY ATM straddle
               </Button>
               <Button
                 size="sm"
                 variant="outline"
                 disabled={s.legs.length >= 6}
-                onClick={() =>
-                  setS({
-                    legs: [
-                      ...s.legs,
-                      {
-                        underlying: 'NIFTY',
-                        option: 'CE',
-                        strike: 0,
-                        side: 'BUY',
-                        lots: 1,
-                      },
-                    ],
-                  })
-                }
+                onClick={() => onChange({ legs: [...s.legs, { underlying: 'NIFTY', option: 'CE', strike: 0, side: 'BUY', lots: 1 }] })}
               >
                 <Plus /> Add leg
               </Button>
@@ -380,14 +488,7 @@ function ScheduleCard({ form, set, saveBar }: { form: AutomationSettings; set: S
                     <Input value={l.underlying} onChange={(e) => setLeg(i, { underlying: e.target.value.toUpperCase() })} placeholder="NIFTY" />
                   </Field>
                   <Field label="Option">
-                    <Select
-                      value={l.option}
-                      onChange={(e) =>
-                        setLeg(i, {
-                          option: e.target.value as ScheduleLeg['option'],
-                        })
-                      }
-                    >
+                    <Select value={l.option} onChange={(e) => setLeg(i, { option: e.target.value as ScheduleLeg['option'] })}>
                       <option value="CE">CE</option>
                       <option value="PE">PE</option>
                       <option value="FUT">FUT</option>
@@ -403,31 +504,15 @@ function ScheduleCard({ form, set, saveBar }: { form: AutomationSettings; set: S
                     </Select>
                   </Field>
                   <Field label="Side">
-                    <Select
-                      value={l.side}
-                      onChange={(e) =>
-                        setLeg(i, {
-                          side: e.target.value as ScheduleLeg['side'],
-                        })
-                      }
-                    >
+                    <Select value={l.side} onChange={(e) => setLeg(i, { side: e.target.value as ScheduleLeg['side'] })}>
                       <option value="BUY">BUY</option>
                       <option value="SELL">SELL</option>
                     </Select>
                   </Field>
                   <Field label="Lots">
-                    <Input
-                      type="number"
-                      min={1}
-                      value={l.lots}
-                      onChange={(e) =>
-                        setLeg(i, {
-                          lots: Math.max(1, Number(e.target.value) || 1),
-                        })
-                      }
-                    />
+                    <Input type="number" min={1} value={l.lots} onChange={(e) => setLeg(i, { lots: Math.max(1, Number(e.target.value) || 1) })} />
                   </Field>
-                  <Button size="icon" variant="ghost" aria-label="Remove leg" onClick={() => setS({ legs: s.legs.filter((_, n) => n !== i) })}>
+                  <Button size="icon" variant="ghost" aria-label="Remove leg" onClick={() => onChange({ legs: s.legs.filter((_, n) => n !== i) })}>
                     <Trash2 />
                   </Button>
                 </div>
@@ -440,13 +525,12 @@ function ScheduleCard({ form, set, saveBar }: { form: AutomationSettings; set: S
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Target (points per leg)" hint="Empty = none">
-            <Input type="number" min={0} step="0.05" value={s.targetPoints ?? ''} onChange={(e) => setS({ targetPoints: numOrNull(e.target.value) })} />
+            <Input type="number" min={0} step="0.05" value={s.targetPoints ?? ''} onChange={(e) => onChange({ targetPoints: numOrNull(e.target.value) })} />
           </Field>
           <Field label="Stop loss (points per leg)" hint="Empty = none">
-            <Input type="number" min={0} step="0.05" value={s.stoplossPoints ?? ''} onChange={(e) => setS({ stoplossPoints: numOrNull(e.target.value) })} />
+            <Input type="number" min={0} step="0.05" value={s.stoplossPoints ?? ''} onChange={(e) => onChange({ stoplossPoints: numOrNull(e.target.value) })} />
           </Field>
         </div>
-        {saveBar}
       </CardContent>
     </Card>
   );

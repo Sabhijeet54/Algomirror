@@ -610,6 +610,21 @@ export class MasterController {
     return { settings: this.automation.get(s), today: await this.automation.today(s.id) };
   }
 
+  /** Timed entries / exits of all my strategies (each names the strategy it trades in). */
+  @Get('automation/schedules')
+  async schedulesList(@CurrentUser() user: RequestUser) {
+    if (user.actorId) throw new ForbiddenException('Only the master can see automation');
+    return this.automation.listSchedules(user.id);
+  }
+
+  @Put('automation/schedules')
+  async schedulesSave(@CurrentUser() user: RequestUser, @Body() body: unknown, @Req() req: Request) {
+    if (user.actorId) throw new ForbiddenException('Only the master can change automation');
+    const out = await this.automation.saveSchedules(user.id, body);
+    await this.audit.log({ action: 'PROFILE_UPDATED', actorUserId: user.id, targetType: 'Strategy', metadata: { schedules: out.map((s) => ({ strategyId: s.strategyId, name: s.name, entry: s.entryTime, exit: s.exitTime, enabled: s.enabled })) }, client: clientInfo(req) });
+    return out;
+  }
+
   @Put('strategies/:id/automation')
   async automationSave(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: unknown, @Req() req: Request) {
     if (user.actorId) throw new ForbiddenException('Only the master can change automation');

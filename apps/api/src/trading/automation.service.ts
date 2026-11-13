@@ -15,8 +15,10 @@ import {
   istNow,
   legAlert,
   normalizeAutomation,
+  normalizeSchedules,
   readAutomation,
   type AutomationSettings,
+  type Schedule,
 } from './automation';
 import { SignalService, type SignalExitReason } from './signal.service';
 import { WebhookService } from './webhook.service';
@@ -61,10 +63,13 @@ export class AutomationService implements OnApplicationBootstrap, OnModuleDestro
     return readAutomation(strategy.automation);
   }
 
+  /** Saves the strategy's settings. Schedules are kept as they are unless the body sends "schedules". */
   async save(strategy: Strategy, input: unknown): Promise<AutomationSettings> {
     let s: AutomationSettings;
     try {
-      s = normalizeAutomation(input);
+      const body = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
+      const keep = !('schedules' in body) ? { schedules: readAutomation(strategy.automation).schedules } : {};
+      s = normalizeAutomation({ ...body, schedule: undefined, ...keep });
     } catch (err) {
       if (err instanceof AutomationError) throw new BadRequestException(err.message);
       throw err;
@@ -75,6 +80,44 @@ export class AutomationService implements OnApplicationBootstrap, OnModuleDestro
     });
     this.cacheAt = 0;
     return s;
+  }
+
+  /** Every schedule of the master's strategies, flat, with the strategy each one trades in. */
+  async listSchedules(masterUserId: string): Promise<(Schedule & { strategyId: string; strategyName: string; strategyStatus: string })[]> {
+    const strategies = await this.prisma.strategy.findMany({ where: { masterUserId }, orderBy: { createdAt: 'asc' } });
+    return strategies.flatMap((st) => readAutomation(st.automation).schedules.map((s) => ({ ...s, strategyId: st.id, strategyName: st.name, strategyStatus: st.status })));
+  }
+
+  /**
+   * Saves the master's whole schedule list: each schedule goes into the strategy it names (moving a schedule to
+   * another strategy moves it); strategies left without schedules get none. Other automation settings are kept.
+   */
+  async saveSchedules(masterUserId: string, input: unknown) {
+    const list = Array.isArray((input as { schedules?: unknown })?.schedules) ? ((input as { schedules: unknown[] }).schedules as unknown[]) : null;
+    if (!list) throw new BadRequestException('Send { schedules: [...] }');
+    const strategies = await this.prisma.strategy.findMany({ where: { masterUserId } });
+    const own = new Map(strategies.map((st) => [st.id, st]));
+    const groups = new Map<string, unknown[]>();
+    for (const raw of list) {
+      const id = String((raw as { strategyId?: unknown })?.strategyId ?? '');
+      if (!own.has(id)) throw new BadRequestException('Pick a strategy for every schedule');
+      groups.set(id, [...(groups.get(id) ?? []), raw]);
+    }
+    const next = new Map<string, AutomationSettings>();
+    try {
+      for (const st of strategies) {
+        const cur = readAutomation(st.automation);
+        const schedules = normalizeSchedules(groups.get(st.id) ?? []);
+        if (!cur.schedules.length && !schedules.length) continue;
+        next.set(st.id, { ...cur, schedules });
+      }
+    } catch (err) {
+      if (err instanceof AutomationError) throw new BadRequestException(err.message);
+      throw err;
+    }
+    await this.prisma.$transaction([...next].map(([id, a]) => this.prisma.strategy.update({ where: { id }, data: { automation: a as unknown as Prisma.InputJsonValue } })));
+    this.cacheAt = 0;
+    return this.listSchedules(masterUserId);
   }
 
   /** Today's P&L of the strategy and whether new entries are stopped for the day. */
@@ -116,26 +159,42 @@ export class AutomationService implements OnApplicationBootstrap, OnModuleDestro
   }
 
   private async runSchedule(st: Strategy, a: AutomationSettings, t: ReturnType<typeof istNow>): Promise<void> {
-    const s = a.schedule;
-    if (!s.enabled || !s.days.includes(t.weekday)) return;
-    if (isDue(s.entryTime, t.hhmm) && (await this.once(`ctp:auto:sched:${st.id}:${t.date}:in`))) {
+    for (const s of a.schedules) {
+      if (s.enabled && s.days.includes(t.weekday)) await this.runOneSchedule(st, s, t);
+    }
+  }
+
+  /**
+   * One schedule: at the entry time its legs are traded (the contracts are remembered for the day); at the exit
+   * time only those contracts are squared off — other schedules and alerts of the strategy are not touched.
+   */
+  private async runOneSchedule(st: Strategy, s: Schedule, t: ReturnType<typeof istNow>): Promise<void> {
+    const base = `ctp:auto:sched:${st.id}:${t.date}:${s.id}`;
+    const label = `${s.name} ${s.entryTime}`;
+    if (isDue(s.entryTime, t.hhmm) && (await this.once(`${base}:in`))) {
       if (await this.redis.get(dailyHaltKey(st.id, t.date))) {
-        await this.hooks.logEvent(st.id, {
-          ok: false,
-          action: 'SCHEDULE',
-          symbol: null,
-          message: 'Timed entry skipped — daily limit already reached',
-        });
+        await this.hooks.logEvent(st.id, { ok: false, action: label, symbol: null, message: 'Timed entry skipped — daily limit already reached' });
       } else {
-        this.logger.log(`${st.name}: timed entry ${s.entryTime} (${s.legs.length} legs)`);
-        for (const leg of s.legs) await this.hooks.runAlert(st, legAlert(leg, s), `SCHEDULE ${s.entryTime}`);
+        this.logger.log(`${st.name}: ${label} (${s.legs.length} legs)`);
+        const placed: string[] = [];
+        for (const leg of s.legs) {
+          const sym = await this.hooks.runAlert(st, legAlert(leg, s), label);
+          if (sym) placed.push(sym);
+        }
+        if (placed.length) await this.redis.multi().sadd(`${base}:syms`, ...placed).expire(`${base}:syms`, 36 * 3600).exec();
       }
     }
-    if (s.exitTime && isDue(s.exitTime, t.hhmm) && (await this.once(`ctp:auto:sched:${st.id}:${t.date}:out`))) {
-      const r = await this.signals.squareOffStrategy(st.id, st.masterUserId);
+    if (s.exitTime && isDue(s.exitTime, t.hhmm) && (await this.once(`${base}:out`))) {
+      const syms = new Set(await this.redis.smembers(`${base}:syms`));
+      const action = `${s.name} ${s.exitTime}`;
+      if (!syms.size) {
+        await this.hooks.logEvent(st.id, { ok: true, action, symbol: null, message: 'Timed exit: nothing was entered by this schedule today' });
+        return;
+      }
+      const r = await this.signals.exitStrategyMatching(st.id, st.masterUserId, (p) => syms.has(`${p.exchange}:${p.symbol}`));
       await this.hooks.logEvent(st.id, {
         ok: !r.failed,
-        action: `SCHEDULE ${s.exitTime}`,
+        action,
         symbol: null,
         message: `Timed exit: ${r.closed} closed${r.failed ? `, ${r.failed} failed (${r.errors.slice(0, 2).join('; ')})` : ''}`,
       });
@@ -205,7 +264,9 @@ export class AutomationService implements OnApplicationBootstrap, OnModuleDestro
       const a = readAutomation(st.automation);
       if (!a.reentry.enabled || sig.reentryCount >= a.reentry.max) return;
       const t = istNow();
-      if (a.schedule.enabled && a.schedule.exitTime && t.hhmm >= a.schedule.exitTime) return;
+      // No re-entry once the last timed exit of the strategy for today has passed.
+      const exits = a.schedules.filter((x) => x.enabled && x.exitTime && x.days.includes(t.weekday)).map((x) => x.exitTime!);
+      if (exits.length && t.hhmm >= exits.sort().at(-1)!) return;
       if (await this.redis.get(dailyHaltKey(st.id, t.date))) return;
       if (!(await this.once(`ctp:auto:reentry:${sig.id}`))) return;
       // Same trade again at MARKET, with the same target / stop loss distance from the new entry.

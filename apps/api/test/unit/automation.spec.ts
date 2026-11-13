@@ -18,33 +18,43 @@ import { parseAlert } from '../../src/trading/webhook-alert';
 
 describe('automation settings', () => {
   it('fills defaults and never throws on stored junk', () => {
-    expect(readAutomation(null).schedule.enabled).toBe(false);
-    expect(readAutomation({ schedule: { entryTime: 'bad' } }).schedule.entryTime).toBe('09:20');
+    expect(readAutomation(null).schedules).toEqual([]);
+    expect(readAutomation({ schedules: [{ entryTime: 'bad' }] }).schedules).toEqual([]);
+  });
+
+  it('turns an old single "schedule" into the first of the list', () => {
+    const a = readAutomation({ schedule: { enabled: true, entryTime: '09:30', legs: [{ underlying: 'NIFTY', option: 'CE' }] } });
+    expect(a.schedules).toHaveLength(1);
+    expect(a.schedules[0]).toMatchObject({ id: 's1', name: 'Schedule 1', entryTime: '09:30', enabled: true });
+    expect(readAutomation({ schedule: { enabled: false, legs: [] } }).schedules).toEqual([]);
   });
 
   it('validates the schedule', () => {
     const ok = normalizeAutomation({
-      schedule: {
-        enabled: true,
-        entryTime: '09:20',
-        exitTime: '15:10',
-        days: [1, 3, 3, 9],
-        legs: [
-          {
-            underlying: 'nifty',
-            option: 'CE',
-            strike: 0,
-            side: 'SELL',
-            lots: 1,
-          },
-          { underlying: 'NIFTY', option: 'PE', side: 'SELL' },
-        ],
-      },
+      schedules: [
+        {
+          name: 'Straddle',
+          enabled: true,
+          entryTime: '09:20',
+          exitTime: '15:10',
+          days: [1, 3, 3, 9],
+          legs: [
+            {
+              underlying: 'nifty',
+              option: 'CE',
+              strike: 0,
+              side: 'SELL',
+              lots: 1,
+            },
+            { underlying: 'NIFTY', option: 'PE', side: 'SELL' },
+          ],
+        },
+      ],
       daily: { maxLoss: '5000' },
       reentry: { enabled: true, max: 2 },
     });
-    expect(ok.schedule.days).toEqual([1, 3]);
-    expect(ok.schedule.legs[0]).toEqual({
+    expect(ok.schedules[0]!.days).toEqual([1, 3]);
+    expect(ok.schedules[0]!.legs[0]).toEqual({
       underlying: 'NIFTY',
       option: 'CE',
       strike: 0,
@@ -53,32 +63,33 @@ describe('automation settings', () => {
     });
     expect(ok.daily.maxLoss).toBe(5000);
     expect(ok.reentry.max).toBe(2);
-    expect(() => normalizeAutomation({ schedule: { enabled: true, legs: [] } })).toThrow(/at least one leg/);
-    expect(() => normalizeAutomation({ schedule: { entryTime: '9:20' } })).toThrow(AutomationError);
-    expect(() =>
-      normalizeAutomation({
-        schedule: { entryTime: '10:00', exitTime: '09:30' },
-      }),
-    ).toThrow(/after the entry/);
+    expect(() => normalizeAutomation({ schedules: [{ name: 'X', enabled: true, legs: [] }] })).toThrow(/X: add at least one leg/);
+    expect(() => normalizeAutomation({ schedules: [{ entryTime: '9:20' }] })).toThrow(AutomationError);
+    expect(() => normalizeAutomation({ schedules: [{ entryTime: '10:00', exitTime: '09:30' }] })).toThrow(/after the entry/);
+    expect(() => normalizeAutomation({ schedules: Array.from({ length: 11 }, () => ({})) })).toThrow(/At most 10/);
+    const ids = normalizeAutomation({ schedules: [{ id: 'a' }, { id: 'a' }, {}] }).schedules.map((x) => x.id);
+    expect(ids).toEqual(['a', 'a-2', 's3']);
     expect(() => normalizeAutomation({ reentry: { max: 3 } })).toThrow(/1 to 2/);
     expect(() => normalizeAutomation({ daily: { maxLoss: -5 } })).toThrow(/positive/);
   });
 
   it('turns a straddle leg into an alert the webhook parser accepts', () => {
     const s = normalizeAutomation({
-      schedule: {
-        legs: [
-          {
-            underlying: 'NIFTY',
-            option: 'PE',
-            strike: -1,
-            side: 'SELL',
-            lots: 2,
-          },
-        ],
-        stoplossPoints: 20,
-      },
-    }).schedule;
+      schedules: [
+        {
+          legs: [
+            {
+              underlying: 'NIFTY',
+              option: 'PE',
+              strike: -1,
+              side: 'SELL',
+              lots: 2,
+            },
+          ],
+          stoplossPoints: 20,
+        },
+      ],
+    }).schedules[0]!;
     const a = parseAlert(legAlert(s.legs[0]!, s));
     expect(a).toMatchObject({
       action: 'SELL',
@@ -155,7 +166,17 @@ describe('AutomationService', () => {
   const make = (automation: unknown, opts: { halted?: boolean } = {}) => {
     const store = new Map<string, string>();
     if (opts.halted) store.set(`ctp:auto:halt:st1:${istNow().date}`, 'LOSS');
+    const sets = new Map<string, Set<string>>();
     const redis = {
+      smembers: jest.fn(async (k: string) => [...(sets.get(k) ?? [])]),
+      multi: jest.fn(() => {
+        const m = {
+          sadd: (k: string, ...v: string[]) => (sets.set(k, new Set([...(sets.get(k) ?? []), ...v])), m),
+          expire: () => m,
+          exec: async () => [],
+        };
+        return m;
+      }),
       get: jest.fn(async (k: string) => store.get(k) ?? null),
       set: jest.fn(async (k: string, v: string) => (store.has(k) ? null : (store.set(k, v), 'OK'))),
     };
@@ -166,14 +187,19 @@ describe('AutomationService', () => {
       status: 'ACTIVE',
       automation,
     };
+    const other = { id: 'st2', name: 'T', masterUserId: 'm1', status: 'ACTIVE', automation: null as unknown };
     const trades: unknown[] = [];
     const prisma = {
       strategy: {
-        findMany: jest.fn(async () => [strategy]),
+        findMany: jest.fn(async (q?: { where?: { status?: string } }) => (q?.where?.status ? [strategy] : [strategy, other])),
         findUnique: jest.fn(async () => strategy),
-        update: jest.fn(async () => strategy),
+        update: jest.fn(async ({ where, data }: { where: { id: string }; data: { automation: unknown } }) => {
+          (where.id === 'st1' ? strategy : other).automation = data.automation;
+          return strategy;
+        }),
       },
       masterTrade: { findMany: jest.fn(async () => trades) },
+      $transaction: jest.fn(async (ops: Promise<unknown>[]) => Promise.all(ops)),
     };
     let exitListener: ((s: unknown, r: string) => void) | undefined;
     const signals = {
@@ -183,9 +209,17 @@ describe('AutomationService', () => {
         failed: 0,
         errors: [],
       })),
+      exitStrategyMatching: jest.fn(async (_s: string, _a: string, match: (p: { exchange: string; symbol: string }) => boolean) => ({
+        closed: ['NIFTY17NOV2625200CE', 'NIFTY17NOV2625200PE', 'BANKNIFTY17NOV2655000CE'].filter((symbol) => match({ exchange: 'NFO', symbol })).length,
+        failed: 0,
+        errors: [],
+      })),
     };
     const hooks = {
-      runAlert: jest.fn(async () => true),
+      runAlert: jest.fn(
+        async (_st: unknown, body: { underlying?: string; option?: string }) =>
+          `NFO:${body.underlying}17NOV26${body.underlying === 'NIFTY' ? '25200' : '55000'}${body.option}`,
+      ),
       logEvent: jest.fn(async () => undefined),
     };
     const prices = { get: jest.fn(() => 230) };
@@ -197,30 +231,84 @@ describe('AutomationService', () => {
       hooks,
       trades,
       store,
+      strategy,
+      other,
       exit: (s: unknown, r: string) => exitListener!(s, r),
     };
   };
   const SCHED = {
-    schedule: {
-      enabled: true,
-      entryTime: '09:20',
-      exitTime: '15:15',
-      days: [5],
-      legs: [
-        { underlying: 'NIFTY', option: 'CE', side: 'SELL' },
-        { underlying: 'NIFTY', option: 'PE', side: 'SELL' },
-      ],
-    },
+    schedules: [
+      {
+        name: 'Straddle',
+        enabled: true,
+        entryTime: '09:20',
+        exitTime: '15:15',
+        days: [5],
+        legs: [
+          { underlying: 'NIFTY', option: 'CE', side: 'SELL' },
+          { underlying: 'NIFTY', option: 'PE', side: 'SELL' },
+        ],
+      },
+    ],
   };
 
-  it('enters each leg once at the entry time and exits all at the exit time', async () => {
+  it('enters each leg once at the entry time and exits those legs at the exit time', async () => {
     const { svc, hooks, signals } = make(SCHED);
     await svc.tick(new Date('2026-11-13T03:50:10Z')); // Fri 09:20 IST
     await svc.tick(new Date('2026-11-13T03:51:10Z')); // 09:21 — already done
     expect(hooks.runAlert).toHaveBeenCalledTimes(2);
-    expect(hooks.runAlert).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: 'SELL', option: 'PE', strike: 'ATM' }), 'SCHEDULE 09:20');
+    expect(hooks.runAlert).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: 'SELL', option: 'PE', strike: 'ATM' }), 'Straddle 09:20');
     await svc.tick(new Date('2026-11-13T09:45:30Z')); // 15:15 IST
-    expect(signals.squareOffStrategy).toHaveBeenCalledWith('st1', 'm1');
+    expect(signals.squareOffStrategy).not.toHaveBeenCalled();
+    expect(hooks.logEvent).toHaveBeenCalledWith('st1', expect.objectContaining({ action: 'Straddle 15:15', message: 'Timed exit: 2 closed' }));
+  });
+
+  it('runs several schedules; a timed exit closes only its own legs', async () => {
+    const { svc, hooks, signals } = make({
+      schedules: [
+        {
+          name: 'Straddle',
+          enabled: true,
+          entryTime: '09:20',
+          exitTime: '15:15',
+          days: [5],
+          legs: [
+            { underlying: 'NIFTY', option: 'CE', side: 'SELL' },
+            { underlying: 'NIFTY', option: 'PE', side: 'SELL' },
+          ],
+        },
+        { name: 'BNF', enabled: true, entryTime: '11:00', exitTime: '11:30', days: [5], legs: [{ underlying: 'BANKNIFTY', option: 'CE', side: 'BUY' }] },
+        { name: 'Off', enabled: false, entryTime: '09:20', legs: [{ underlying: 'SENSEX', option: 'CE' }] },
+      ],
+    });
+    await svc.tick(new Date('2026-11-13T03:50:10Z')); // 09:20
+    await svc.tick(new Date('2026-11-13T05:30:10Z')); // 11:00
+    expect(hooks.runAlert).toHaveBeenCalledTimes(3);
+    expect(hooks.runAlert).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ underlying: 'BANKNIFTY' }), 'BNF 11:00');
+    await svc.tick(new Date('2026-11-13T06:00:10Z')); // 11:30 — BNF exit only
+    expect(signals.exitStrategyMatching).toHaveBeenCalledTimes(1);
+    expect(hooks.logEvent).toHaveBeenCalledWith('st1', expect.objectContaining({ action: 'BNF 11:30', message: 'Timed exit: 1 closed' }));
+  });
+
+  it('lists schedules of all strategies and saves them into the strategy each one names', async () => {
+    const { svc, strategy, other } = make({ ...SCHED, trailPoints: 5 });
+    const list = await svc.listSchedules('m1');
+    expect(list).toEqual([expect.objectContaining({ name: 'Straddle', strategyId: 'st1', strategyName: 'S' })]);
+    // Move it to strategy T and add a second one there.
+    const out = await svc.saveSchedules('m1', {
+      schedules: [
+        { ...list[0], strategyId: 'st2' },
+        { name: 'Late', strategyId: 'st2', entryTime: '13:00' },
+      ],
+    });
+    expect(out.map((x) => [x.strategyId, x.name])).toEqual([
+      ['st2', 'Straddle'],
+      ['st2', 'Late'],
+    ]);
+    expect((strategy.automation as { schedules: unknown[]; trailPoints: number }).schedules).toEqual([]);
+    expect((strategy.automation as { trailPoints: number }).trailPoints).toBe(5); // other settings kept
+    expect((other.automation as { schedules: unknown[] }).schedules).toHaveLength(2);
+    await expect(svc.saveSchedules('m1', { schedules: [{ name: 'X', strategyId: 'someone-else' }] })).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('does not trade on a day that is not picked', async () => {

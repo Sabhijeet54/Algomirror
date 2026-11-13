@@ -15,21 +15,29 @@ export interface ScheduleLeg {
   lots: number;
 }
 
+export interface Schedule {
+  /** Stable id (used for the once-a-day keys). */
+  id: string;
+  name: string;
+  enabled: boolean;
+  /** IST, HH:MM */
+  entryTime: string;
+  /** IST, HH:MM; null = no timed exit */
+  exitTime: string | null;
+  /** 1 = Monday … 5 = Friday */
+  days: number[];
+  expiry: 'nearest' | 'next' | 'monthly';
+  product: 'INTRADAY' | 'CARRY_FORWARD';
+  legs: ScheduleLeg[];
+  targetPoints: number | null;
+  stoplossPoints: number | null;
+}
+
+export const MAX_SCHEDULES = 10;
+
 export interface AutomationSettings {
-  schedule: {
-    enabled: boolean;
-    /** IST, HH:MM */
-    entryTime: string;
-    /** IST, HH:MM; null = no timed exit */
-    exitTime: string | null;
-    /** 1 = Monday … 5 = Friday */
-    days: number[];
-    expiry: 'nearest' | 'next' | 'monthly';
-    product: 'INTRADAY' | 'CARRY_FORWARD';
-    legs: ScheduleLeg[];
-    targetPoints: number | null;
-    stoplossPoints: number | null;
-  };
+  /** Timed entries / exits of this strategy (several allowed, e.g. 09:20 straddle and 11:00 BANKNIFTY). */
+  schedules: Schedule[];
   /** Trailing stop loss step in points for every new trade of the strategy that has a stop loss. */
   trailPoints: number | null;
   daily: { maxLoss: number | null; maxProfit: number | null };
@@ -45,18 +53,20 @@ export interface AutomationSettings {
   };
 }
 
+export const DEFAULT_SCHEDULE: Omit<Schedule, 'id' | 'name'> = {
+  enabled: false,
+  entryTime: '09:20',
+  exitTime: '15:15',
+  days: [1, 2, 3, 4, 5],
+  expiry: 'nearest',
+  product: 'INTRADAY',
+  legs: [],
+  targetPoints: null,
+  stoplossPoints: null,
+};
+
 export const DEFAULT_AUTOMATION: AutomationSettings = {
-  schedule: {
-    enabled: false,
-    entryTime: '09:20',
-    exitTime: '15:15',
-    days: [1, 2, 3, 4, 5],
-    expiry: 'nearest',
-    product: 'INTRADAY',
-    legs: [],
-    targetPoints: null,
-    stoplossPoints: null,
-  },
+  schedules: [],
   trailPoints: null,
   daily: { maxLoss: null, maxProfit: null },
   reentry: { enabled: false, max: 1 },
@@ -104,54 +114,83 @@ export function readAutomation(stored: unknown): AutomationSettings {
   }
 }
 
-/** Validates settings sent by the master. Throws AutomationError with a readable message. */
-export function normalizeAutomation(input: unknown): AutomationSettings {
-  const d = DEFAULT_AUTOMATION;
-  const i = obj(input);
-  const s = obj(i.schedule);
-  const entryTime = s.entryTime == null || s.entryTime === '' ? d.schedule.entryTime : String(s.entryTime);
-  if (!TIME.test(entryTime)) throw new AutomationError('Entry time must be HH:MM (24 hour, IST)');
+/** One timed entry / exit. `n` (1-based) names it in error messages. */
+export function normalizeSchedule(raw: unknown, n: number): Schedule {
+  const d = DEFAULT_SCHEDULE;
+  const s = obj(raw);
+  const tag = `Schedule ${n}`;
+  const id = /^[A-Za-z0-9_-]{1,40}$/.test(String(s.id ?? '')) ? String(s.id) : `s${n}`;
+  const name = String(s.name ?? '').trim().slice(0, 60) || tag;
+  const entryTime = s.entryTime == null || s.entryTime === '' ? d.entryTime : String(s.entryTime);
+  if (!TIME.test(entryTime)) throw new AutomationError(`${name}: entry time must be HH:MM (24 hour, IST)`);
   const exitTime = s.exitTime == null || s.exitTime === '' ? null : String(s.exitTime);
-  if (exitTime && !TIME.test(exitTime)) throw new AutomationError('Exit time must be HH:MM (24 hour, IST)');
-  if (exitTime && exitTime <= entryTime) throw new AutomationError('Exit time must be after the entry time');
-  const days = Array.isArray(s.days) ? [...new Set(s.days.map(Number))].filter((n) => Number.isInteger(n) && n >= 1 && n <= 5).sort() : d.schedule.days;
+  if (exitTime && !TIME.test(exitTime)) throw new AutomationError(`${name}: exit time must be HH:MM (24 hour, IST)`);
+  if (exitTime && exitTime <= entryTime) throw new AutomationError(`${name}: exit time must be after the entry time`);
+  const days = Array.isArray(s.days) ? [...new Set(s.days.map(Number))].filter((x) => Number.isInteger(x) && x >= 1 && x <= 5).sort() : d.days;
   const legsIn = Array.isArray(s.legs) ? s.legs : [];
-  if (legsIn.length > 6) throw new AutomationError('At most 6 legs');
-  const legs: ScheduleLeg[] = legsIn.map((raw, n) => {
-    const l = obj(raw);
+  if (legsIn.length > 6) throw new AutomationError(`${name}: at most 6 legs`);
+  const legs: ScheduleLeg[] = legsIn.map((rawLeg, k) => {
+    const l = obj(rawLeg);
+    const leg = `${name}, leg ${k + 1}`;
     const underlying = String(l.underlying ?? '')
       .trim()
       .toUpperCase();
-    if (!/^[A-Z0-9&_-]{2,30}$/.test(underlying)) throw new AutomationError(`Leg ${n + 1}: enter the underlying (e.g. NIFTY)`);
+    if (!/^[A-Z0-9&_-]{2,30}$/.test(underlying)) throw new AutomationError(`${leg}: enter the underlying (e.g. NIFTY)`);
     const strike = l.strike == null || l.strike === '' ? 0 : Number(l.strike);
-    if (!Number.isInteger(strike) || Math.abs(strike) > 20) throw new AutomationError(`Leg ${n + 1}: strike offset must be a whole number from -20 to 20`);
+    if (!Number.isInteger(strike) || Math.abs(strike) > 20) throw new AutomationError(`${leg}: strike offset must be a whole number from -20 to 20`);
     return {
       underlying,
-      option: oneOf(l.option, ['CE', 'PE', 'FUT'] as const, 'CE', `Leg ${n + 1} option`),
+      option: oneOf(l.option, ['CE', 'PE', 'FUT'] as const, 'CE', `${leg} option`),
       strike,
-      side: oneOf(l.side, ['BUY', 'SELL'] as const, 'BUY', `Leg ${n + 1} side`),
-      lots: posInt(l.lots, `Leg ${n + 1} lots`, 1, 100),
+      side: oneOf(l.side, ['BUY', 'SELL'] as const, 'BUY', `${leg} side`),
+      lots: posInt(l.lots, `${leg} lots`, 1, 100),
     };
   });
   const enabled = s.enabled === true;
-  if (enabled && !legs.length) throw new AutomationError('Add at least one leg to the schedule');
-  if (enabled && !days.length) throw new AutomationError('Pick at least one day for the schedule');
+  if (enabled && !legs.length) throw new AutomationError(`${name}: add at least one leg`);
+  if (enabled && !days.length) throw new AutomationError(`${name}: pick at least one day`);
+  return {
+    id,
+    name,
+    enabled,
+    entryTime,
+    exitTime,
+    days,
+    expiry: (['nearest', 'next', 'monthly'] as const).find((e) => e === String(s.expiry ?? '').toLowerCase()) ?? 'nearest',
+    product: oneOf(s.product, ['INTRADAY', 'CARRY_FORWARD'] as const, 'INTRADAY', `${name} product`),
+    legs,
+    targetPoints: posNum(s.targetPoints, `${name} target points`),
+    stoplossPoints: posNum(s.stoplossPoints, `${name} stop loss points`),
+  };
+}
 
+/** Validates a list of schedules (ids made unique). */
+export function normalizeSchedules(list: unknown): Schedule[] {
+  const arr = Array.isArray(list) ? list : [];
+  if (arr.length > MAX_SCHEDULES) throw new AutomationError(`At most ${MAX_SCHEDULES} schedules per strategy`);
+  const seen = new Set<string>();
+  return arr.map((raw, k) => {
+    const sc = normalizeSchedule(raw, k + 1);
+    let id = sc.id;
+    for (let j = 2; seen.has(id); j++) id = `${sc.id}-${j}`;
+    seen.add(id);
+    return { ...sc, id };
+  });
+}
+
+/** Validates settings sent by the master. Throws AutomationError with a readable message. */
+export function normalizeAutomation(input: unknown): AutomationSettings {
+  const i = obj(input);
+  // Older settings had a single "schedule" object.
+  const legacy = obj(i.schedule);
+  const schedules = normalizeSchedules(
+    Array.isArray(i.schedules) ? i.schedules : Object.keys(legacy).length && (legacy.enabled === true || (Array.isArray(legacy.legs) && legacy.legs.length)) ? [{ ...legacy, id: 's1' }] : [],
+  );
   const dl = obj(i.daily);
   const re = obj(i.reentry);
   const ck = obj(i.chartink);
   return {
-    schedule: {
-      enabled,
-      entryTime,
-      exitTime,
-      days,
-      expiry: (['nearest', 'next', 'monthly'] as const).find((e) => e === String(s.expiry ?? '').toLowerCase()) ?? 'nearest',
-      product: oneOf(s.product, ['INTRADAY', 'CARRY_FORWARD'] as const, 'INTRADAY', 'Product'),
-      legs,
-      targetPoints: posNum(s.targetPoints, 'Target points'),
-      stoplossPoints: posNum(s.stoplossPoints, 'Stop loss points'),
-    },
+    schedules,
     trailPoints: posNum(i.trailPoints, 'Trailing stop loss points'),
     daily: {
       maxLoss: posNum(dl.maxLoss, 'Daily max loss'),
@@ -207,7 +246,7 @@ export function isDue(at: string, hhmm: string): boolean {
 // ------------------------------------------------------------ schedule legs → alerts
 
 /** One schedule leg as a webhook alert body (parsed by parseAlert). */
-export function legAlert(leg: ScheduleLeg, s: AutomationSettings['schedule']): Record<string, unknown> {
+export function legAlert(leg: ScheduleLeg, s: Schedule): Record<string, unknown> {
   return {
     action: leg.side,
     underlying: leg.underlying,
