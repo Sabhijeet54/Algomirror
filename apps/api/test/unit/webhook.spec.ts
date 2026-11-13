@@ -32,6 +32,25 @@ describe('parseAlert', () => {
   });
 });
 
+describe('signal → option (AUTO) and ITM / OTM', () => {
+  it('BUY → buy a call, SELL → buy a put, flat → exit', () => {
+    expect(parseAlert({ action: 'long', underlying: 'NIFTY', option: 'AUTO', strike: 'ATM' })).toMatchObject({ action: 'BUY', option: 'CE', flipExit: 'PE', exchange: 'NFO' });
+    expect(parseAlert({ action: 'sell', underlying: 'BANKNIFTY', option: 'auto', strike: 'ITM2' })).toMatchObject({ action: 'BUY', option: 'PE', flipExit: 'CE', strike: { atmOffset: 2 } });
+    const flat = parseAlert({ action: 'flat', underlying: 'NIFTY', option: 'AUTO' });
+    expect(flat.action).toBe('EXIT');
+    expect(flat.option).toBeUndefined();
+    expect(() => parseAlert({ action: 'BUY', option: 'AUTO', symbol: 'SBIN' })).toThrow(/underlying/);
+  });
+
+  it('ITM is below ATM for calls and above for puts', () => {
+    expect(parseAlert({ action: 'BUY', underlying: 'NIFTY', option: 'CE', strike: 'ITM1' }).strike).toEqual({ atmOffset: -1 });
+    expect(parseAlert({ action: 'BUY', underlying: 'NIFTY', option: 'CE', strike: 'OTM2' }).strike).toEqual({ atmOffset: 2 });
+    expect(parseAlert({ action: 'BUY', underlying: 'NIFTY', option: 'PE', strike: 'ITM' }).strike).toEqual({ atmOffset: 1 });
+    expect(parseAlert({ action: 'BUY', underlying: 'NIFTY', option: 'PE', strike: 'OTM3' }).strike).toEqual({ atmOffset: -3 });
+    expect(() => parseAlert({ action: 'BUY', underlying: 'NIFTY', option: 'FUT', strike: 'ITM1' })).toThrow(/ITM/);
+  });
+});
+
 describe('contract selection', () => {
   it('picks nearest / next / monthly / exact expiry', () => {
     expect(pickExpiry(EXPIRIES, 'nearest').date).toBe('2026-11-17');
@@ -112,6 +131,17 @@ describe('WebhookService', () => {
       expect.objectContaining({ strategyId: 'st1', exchange: 'NFO', symbol: 'NIFTY17NOV2625200CE', side: 'BUY', quantity: 130, lotSize: 65, orderType: 'MARKET', productType: 'INTRADAY', targetPrice: 180, stopLossPrice: 135 }),
       {},
     );
+  });
+
+  it('AUTO: a SELL signal exits the open call and buys an in-the-money put', async () => {
+    const { svc, orders, signals } = make();
+    const r = await svc.handle(STRATEGY.webhookToken, { action: 'SELL', underlying: 'NIFTY', option: 'AUTO', strike: 'ITM1', lots: 1, spot: 25212 });
+    expect(signals.exitStrategyMatching).toHaveBeenCalledTimes(1);
+    const match = signals.exitStrategyMatching.mock.calls[0]![2];
+    expect(match({ exchange: 'NFO', symbol: 'NIFTY17NOV2625200CE' })).toBe(true);
+    expect(match({ exchange: 'NFO', symbol: 'NIFTY17NOV2625200PE' })).toBe(false);
+    expect(orders.place).toHaveBeenCalledWith('m1', STRATEGY, expect.objectContaining({ symbol: 'NIFTY17NOV2625250PE', side: 'BUY', quantity: 65 }), {});
+    expect(r.message).toMatch(/closed 1 CE first/);
   });
 
   it('exits only this underlying, and EXIT_ALL squares off the strategy', async () => {

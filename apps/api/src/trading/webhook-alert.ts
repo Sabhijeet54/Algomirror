@@ -41,8 +41,10 @@ export interface ParsedAlert {
   underlying?: string;
   /** CE / PE / FUT (derivatives by underlying). */
   option?: 'CE' | 'PE' | 'FUT';
-  /** Number, or ATM / ATM+n / ATM-n (n strikes above / below the at-the-money strike). */
+  /** Number, or ATM / ATM+n / ATM-n (n strikes above / below the at-the-money strike). ITMn / OTMn are turned into ATM±n. */
   strike?: number | { atmOffset: number };
+  /** option AUTO (signal → option): the opposite option of the underlying is exited before this entry. */
+  flipExit?: 'CE' | 'PE';
   /** nearest (default) | next | monthly | YYYY-MM-DD */
   expiry: string;
   spot?: number;
@@ -89,12 +91,12 @@ export function readAlertBody(body: unknown): AlertInput {
 
 export function parseAlert(input: AlertInput): ParsedAlert {
   const rawAction = str(input.action).toUpperCase().replace(/[\s-]+/g, '_');
-  const action: AlertAction | null =
+  let action: AlertAction | null =
     rawAction === 'BUY' || rawAction === 'LONG'
       ? 'BUY'
       : rawAction === 'SELL' || rawAction === 'SHORT'
         ? 'SELL'
-        : rawAction === 'EXIT' || rawAction === 'CLOSE' || rawAction === 'SQUARE_OFF' || rawAction === 'SQUAREOFF'
+        : rawAction === 'EXIT' || rawAction === 'CLOSE' || rawAction === 'SQUARE_OFF' || rawAction === 'SQUAREOFF' || rawAction === 'FLAT'
           ? 'EXIT'
           : rawAction === 'EXIT_ALL' || rawAction === 'CLOSE_ALL'
             ? 'EXIT_ALL'
@@ -108,8 +110,18 @@ export function parseAlert(input: AlertInput): ParsedAlert {
   if (action !== 'EXIT_ALL' && !symbol && !underlying) throw new AlertError('Give "symbol" (exact contract) or "underlying" (e.g. NIFTY).');
 
   const rawOpt = str(input.option).toUpperCase();
-  const option = rawOpt === 'CE' || rawOpt === 'CALL' ? 'CE' : rawOpt === 'PE' || rawOpt === 'PUT' ? 'PE' : rawOpt === 'FUT' || rawOpt === 'FUTURE' ? 'FUT' : undefined;
-  if (rawOpt && !option) throw new AlertError('"option" must be CE, PE or FUT.');
+  // AUTO: a spot / index signal picks the option — BUY (long) → buy a CALL, SELL (short) → buy a PUT.
+  const auto = rawOpt === 'AUTO';
+  if (auto && !underlying) throw new AlertError('"option":"AUTO" needs "underlying" (e.g. NIFTY).');
+  let option: 'CE' | 'PE' | 'FUT' | undefined =
+    rawOpt === 'CE' || rawOpt === 'CALL' ? 'CE' : rawOpt === 'PE' || rawOpt === 'PUT' ? 'PE' : rawOpt === 'FUT' || rawOpt === 'FUTURE' ? 'FUT' : undefined;
+  if (rawOpt && !auto && !option) throw new AlertError('"option" must be CE, PE, FUT or AUTO.');
+  let flipExit: 'CE' | 'PE' | undefined;
+  if (auto && (action === 'BUY' || action === 'SELL')) {
+    option = action === 'BUY' ? 'CE' : 'PE';
+    flipExit = action === 'BUY' ? 'PE' : 'CE';
+    action = 'BUY';
+  }
 
   let exchange = str(input.exchange).toUpperCase();
   if (exchange && !EXCHANGES.has(exchange)) throw new AlertError(`Unknown exchange "${exchange}".`);
@@ -125,9 +137,16 @@ export function parseAlert(input: AlertInput): ParsedAlert {
   const rawStrike = str(input.strike).toUpperCase().replace(/\s+/g, '');
   if (rawStrike) {
     const m = /^ATM([+-]\d{1,2})?$/.exec(rawStrike);
+    const money = /^(ITM|OTM)(\d{1,2})?$/.exec(rawStrike);
     if (m) strike = { atmOffset: m[1] ? Number(m[1]) : 0 };
-    else if (Number(rawStrike) > 0) strike = Number(rawStrike);
-    else throw new AlertError('"strike" must be a number, ATM, ATM+1, ATM-2 …');
+    else if (money) {
+      if (option !== 'CE' && option !== 'PE') throw new AlertError('ITM / OTM strikes need "option" CE, PE or AUTO.');
+      const n = Number(money[2] ?? 1);
+      // In the money: lower strikes for a call, higher for a put (out of the money the other way).
+      const up = (money[1] === 'OTM') === (option === 'CE');
+      strike = { atmOffset: up ? n : -n };
+    } else if (Number(rawStrike) > 0) strike = Number(rawStrike);
+    else throw new AlertError('"strike" must be a number, ATM, ATM+1, ATM-2, ITM1, OTM2 …');
   }
 
   const expiry = str(input.expiry).toLowerCase() || 'nearest';
@@ -149,7 +168,7 @@ export function parseAlert(input: AlertInput): ParsedAlert {
     throw new AlertError('"orderType" must be MARKET or LIMIT.');
   })();
 
-  const out: ParsedAlert = { action, exchange, symbol, underlying, option, strike, expiry, product, orderType };
+  const out: ParsedAlert = { action, exchange, symbol, underlying, option, strike, expiry, product, orderType, ...(flipExit ? { flipExit } : {}) };
   const fields: [keyof ParsedAlert, unknown][] = [
     ['spot', input.spot],
     ['lots', input.lots],

@@ -1,14 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Copy, Power, RefreshCw, Webhook } from 'lucide-react';
 import { toast } from 'sonner';
 import type { StrategyView } from '@ctp/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select } from '@/components/ui/select';
 import { ApiError } from '@/lib/api';
-import { useStrategyWebhook, useWebhookChange } from '@/lib/trading';
+import { useFnoScripts, useStrategyWebhook, useWebhookChange, type FnoExchange } from '@/lib/trading';
 
 /** Ready-to-paste TradingView alert messages. {{close}} is TradingView's chart price (used for ATM). */
 const EXAMPLES: { title: string; json: string }[] = [
@@ -88,9 +91,11 @@ export function WebhookCard({ strategy }: { strategy: StrategyView }) {
           </div>
         ) : null}
 
+        {info?.enabled ? <AlertBuilder strategy={strategy} /> : <p className="text-sm text-muted-foreground">Turn the webhook on to build the TradingView alert.</p>}
+
         <div>
           <Button size="sm" variant="link" className="px-0" onClick={() => setShowHelp((v) => !v)}>
-            {showHelp ? 'Hide' : 'Show'} alert message examples
+            {showHelp ? 'Hide' : 'Show'} more message examples
           </Button>
           {showHelp ? (
             <div className="mt-2 space-y-3 text-sm">
@@ -115,5 +120,138 @@ export function WebhookCard({ strategy }: { strategy: StrategyView }) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// ------------------------------------------------------------ alert builder (spot / index signal → option)
+
+const SEGMENTS: { id: FnoExchange; label: string }[] = [
+  { id: 'NFO', label: 'NSE F&O' },
+  { id: 'BFO', label: 'BSE F&O' },
+  { id: 'MCX', label: 'MCX' },
+];
+const STRIKES = ['ITM3', 'ITM2', 'ITM1', 'ATM', 'OTM1', 'OTM2', 'OTM3'];
+
+/**
+ * Builds the TradingView alert message for this strategy: the signal on the spot / index chart decides the option —
+ * BUY → call, SELL → put — and the strike, expiry, lots and target / stop loss come from here.
+ */
+function AlertBuilder({ strategy }: { strategy: StrategyView }) {
+  const [segment, setSegment] = useState<FnoExchange>('NFO');
+  const [script, setScript] = useState('NIFTY');
+  const [expiry, setExpiry] = useState<'nearest' | 'next' | 'monthly'>('nearest');
+  const [strike, setStrike] = useState('ATM');
+  const [lots, setLots] = useState(1);
+  const [target, setTarget] = useState('');
+  const [stoploss, setStoploss] = useState('');
+  const [source, setSource] = useState<'strategy' | 'indicator'>('strategy');
+  const scripts = useFnoScripts(segment, script);
+  const lotSize = scripts.data?.find((s) => s.name === script.trim().toUpperCase())?.lotSize ?? null;
+
+  const message = (action: string) => {
+    const t = Number(target);
+    const sl = Number(stoploss);
+    // {{close}} = the chart price when the alert fires (spot / index) → ATM strike.
+    return `{"action":"${action}","exchange":"${segment}","underlying":"${script.trim().toUpperCase()}","option":"AUTO","strike":"${strike}","expiry":"${expiry}","lots":${lots},"spot":{{close}}${t > 0 ? `,"targetPoints":${t}` : ''}${sl > 0 ? `,"stoplossPoints":${sl}` : ''}}`;
+  };
+  const messages = useMemo(
+    () =>
+      source === 'strategy'
+        ? [{ title: 'Alert message (one alert on the strategy)', json: message('{{strategy.market_position}}') }]
+        : [
+            { title: 'BUY alert message → buys a CALL', json: message('BUY') },
+            { title: 'SELL alert message → buys a PUT', json: message('SELL') },
+          ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [source, segment, script, expiry, strike, lots, target, stoploss],
+  );
+
+  return (
+    <div className="space-y-4 rounded-md border p-3">
+      <div>
+        <div className="text-sm font-medium">Alert builder · {strategy.name}</div>
+        <p className="text-xs text-muted-foreground">
+          Put the alert on the spot / index chart. A BUY signal buys a CALL, a SELL signal buys a PUT — the open option on the other side is closed first. Strike is
+          picked from the chart price when the alert fires.
+        </p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <BField label="Segment">
+          <Select value={segment} onChange={(e) => setSegment(e.target.value as FnoExchange)}>
+            {SEGMENTS.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+              </option>
+            ))}
+          </Select>
+        </BField>
+        <BField label="Script" hint={lotSize ? `Lot size ${lotSize}` : 'Type to search, e.g. NIFTY, BANKNIFTY, RELIANCE'}>
+          <Input list="tv-scripts" value={script} onChange={(e) => setScript(e.target.value.toUpperCase())} placeholder="NIFTY" />
+          <datalist id="tv-scripts">
+            {(scripts.data ?? []).map((s) => (
+              <option key={s.name} value={s.name} />
+            ))}
+          </datalist>
+        </BField>
+        <BField label="Expiry">
+          <Select value={expiry} onChange={(e) => setExpiry(e.target.value as typeof expiry)}>
+            <option value="nearest">Nearest (current)</option>
+            <option value="next">Next</option>
+            <option value="monthly">Monthly</option>
+          </Select>
+        </BField>
+        <BField label="Call / Put">
+          <Input value="From signal: BUY → CE, SELL → PE" readOnly disabled />
+        </BField>
+        <BField label="Strike">
+          <Select value={strike} onChange={(e) => setStrike(e.target.value)}>
+            {STRIKES.map((s) => (
+              <option key={s} value={s}>
+                {s === 'ATM' ? 'ATM (at the money)' : s.startsWith('ITM') ? `ITM ${s.slice(3)} (in the money)` : `OTM ${s.slice(3)} (out of the money)`}
+              </option>
+            ))}
+          </Select>
+        </BField>
+        <BField label="Lots" hint={lotSize ? `= ${lots * lotSize} qty` : undefined}>
+          <Input type="number" min={1} value={lots} onChange={(e) => setLots(Math.max(1, Math.floor(Number(e.target.value)) || 1))} />
+        </BField>
+        <BField label="Target (points)" hint="On the option price; empty = none">
+          <Input type="number" min={0} step="0.05" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="e.g. 30" />
+        </BField>
+        <BField label="Stop loss (points)" hint="On the option price; empty = none">
+          <Input type="number" min={0} step="0.05" value={stoploss} onChange={(e) => setStoploss(e.target.value)} placeholder="e.g. 15" />
+        </BField>
+      </div>
+      <BField label="Signal from">
+        <Select value={source} onChange={(e) => setSource(e.target.value as typeof source)}>
+          <option value="strategy">TradingView strategy (one alert; flat = exit)</option>
+          <option value="indicator">Indicator (two alerts: BUY and SELL)</option>
+        </Select>
+      </BField>
+      {messages.map((m) => (
+        <div key={m.title} className="space-y-1">
+          <div className="text-xs font-medium">{m.title}</div>
+          <div className="flex items-start gap-2">
+            <code className="min-w-0 flex-1 break-all rounded-md border bg-muted/40 px-2 py-1.5 text-xs">{m.json}</code>
+            <Button size="sm" variant="outline" onClick={() => void copy(m.json, 'Message')}>
+              <Copy /> Copy
+            </Button>
+          </div>
+        </div>
+      ))}
+      <p className="text-xs text-muted-foreground">
+        In TradingView: Create alert → Condition = your strategy / indicator → Notifications → Webhook URL = the URL above → Message = the message above.
+      </p>
+    </div>
+  );
+}
+
+function BField({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0 space-y-1.5">
+      <Label className="text-xs">{label}</Label>
+      {children}
+      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+    </div>
   );
 }

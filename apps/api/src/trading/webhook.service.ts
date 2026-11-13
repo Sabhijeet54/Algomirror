@@ -206,6 +206,14 @@ export class WebhookService {
 
   private async enter(strategy: Strategy, a: ParsedAlert, opts: { reentryCount?: number } = {}) {
     const side = a.action as 'BUY' | 'SELL';
+    // Signal → option: close the opposite option of this underlying first (BUY exits puts, SELL exits calls).
+    let flipped = '';
+    if (a.flipExit && a.underlying) {
+      const u = a.underlying;
+      const opp = a.flipExit;
+      const r = await this.signals.exitStrategyMatching(strategy.id, strategy.masterUserId, (p) => symbolOfUnderlying(p.symbol, u, opp));
+      if (r.closed || r.failed) flipped = ` (closed ${r.closed} ${opp}${r.failed ? `, ${r.failed} failed` : ''} first)`;
+    }
     const { exchange, symbol, lotSize } = await this.resolve(a);
     const quantity = a.qty ?? (a.lots ?? 1) * lotSize;
     const price = a.orderType === 'LIMIT' ? a.price! : await this.livePrice(exchange, symbol);
@@ -227,7 +235,7 @@ export class WebhookService {
     try {
       const r = await this.orders.place(strategy.masterUserId, strategy, dto, opts);
       const lots = lotSize > 1 ? ` (${quantity / lotSize} lot${quantity / lotSize === 1 ? '' : 's'})` : '';
-      return { symbol: `${exchange}:${symbol}`, message: `${side} ${quantity}${lots} ${exchange}:${symbol} placed and copied`, tradeId: r.tradeId };
+      return { symbol: `${exchange}:${symbol}`, message: `${side} ${quantity}${lots} ${exchange}:${symbol} placed and copied${flipped}`, tradeId: r.tradeId };
     } catch (err) {
       if (err instanceof BadRequestException || err instanceof ForbiddenException) throw new AlertError(err.message);
       throw err;
