@@ -1,4 +1,10 @@
-import type { Exchange, OrderSide, OrderStatus, OrderType, ProductType } from '@ctp/database';
+import type {
+  Exchange,
+  OrderSide,
+  OrderStatus,
+  OrderType,
+  ProductType,
+} from "@ctp/database";
 
 /** Broker-neutral order request. `symbol` is the platform's canonical trading symbol (e.g. "INFY", "NIFTY24OCT25000CE"). */
 export interface PlaceOrderInput {
@@ -66,9 +72,11 @@ export interface AdapterOptions {
 
 /** Thrown when an order is attempted on a DATA_ONLY (master) account. Never retried. */
 export class OrderBlockedError extends Error {
-  constructor(message = 'Order blocked: this is a DATA_ONLY master account (live market data only).') {
+  constructor(
+    message = "Order blocked: this is a DATA_ONLY master account (live market data only).",
+  ) {
     super(message);
-    this.name = 'OrderBlockedError';
+    this.name = "OrderBlockedError";
   }
 }
 
@@ -94,7 +102,15 @@ export interface BrokerAdapter {
   ltp(exchange: Exchange, symbol: string): Promise<number | null>;
 }
 
-export const EXCHANGES: Exchange[] = ['NSE', 'BSE', 'NFO', 'BFO', 'MCX', 'CDS', 'BCD'];
+export const EXCHANGES: Exchange[] = [
+  "NSE",
+  "BSE",
+  "NFO",
+  "BFO",
+  "MCX",
+  "CDS",
+  "BCD",
+];
 
 export function toExchange(v: string): Exchange {
   const e = v?.toUpperCase() as Exchange;
@@ -104,15 +120,16 @@ export function toExchange(v: string): Exchange {
 
 /** Canonical symbol: Angel equity symbols carry a "-EQ"/"-BE" series suffix that Zerodha does not. */
 export function canonicalSymbol(symbol: string): string {
-  return symbol.toUpperCase().replace(/-(EQ|BE|BZ|SM|ST)$/, '');
+  return symbol.toUpperCase().replace(/-(EQ|BE|BZ|SM|ST)$/, "");
 }
 
 export const num = (v: unknown): number | null => {
-  if (v === null || v === undefined || v === '') return null;
+  if (v === null || v === undefined || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 };
 
 /** F&O exchanges (segment "FO"); everything else counts as "EQ" for allowed-segment checks. */
-export const FO_EXCHANGES: Exchange[] = ['NFO', 'BFO', 'MCX', 'CDS', 'BCD'];
-export const segmentOf = (exchange: Exchange): 'EQ' | 'FO' => (FO_EXCHANGES.includes(exchange) ? 'FO' : 'EQ');
+export const FO_EXCHANGES: Exchange[] = ["NFO", "BFO", "MCX", "CDS", "BCD"];
+export const segmentOf = (exchange: Exchange): "EQ" | "FO" =>
+  FO_EXCHANGES.includes(exchange) ? "FO" : "EQ";

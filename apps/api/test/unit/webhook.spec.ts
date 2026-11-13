@@ -110,6 +110,7 @@ describe('WebhookService', () => {
       'm1',
       STRATEGY,
       expect.objectContaining({ strategyId: 'st1', exchange: 'NFO', symbol: 'NIFTY17NOV2625200CE', side: 'BUY', quantity: 130, lotSize: 65, orderType: 'MARKET', productType: 'INTRADAY', targetPrice: 180, stopLossPrice: 135 }),
+      {},
     );
   });
 

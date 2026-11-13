@@ -6,6 +6,7 @@ import {
   Activity,
   ArrowLeftRight,
   BarChart3,
+  Bot,
   Briefcase,
   Building2,
   CandlestickChart,
@@ -71,6 +72,7 @@ const MENUS: Partial<Record<Role, NavSection[]>> = {
         { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { href: '/master', label: 'Strategies', icon: Layers, exact: true },
         { href: '/master/place-trade', label: 'Place trade', icon: PlusCircle },
+        { href: '/master/automation', label: 'Automation', icon: Bot },
         { href: '/master/trades', label: 'Live trades', icon: CandlestickChart },
         { href: '/master/positions', label: 'Open positions', icon: Briefcase },
         { href: '/master/history', label: 'Trade history', icon: History },
@@ -221,7 +223,7 @@ export function AppShell({ user, children }: { user: AuthUser; children: React.R
   const [profileOpen, setProfileOpen] = useState(false);
   const quota = useMasterLicenceQuota(user.role === 'MASTER');
   const sections = (MENUS[user.role === 'SUB_ADMIN' ? 'ADMIN' : user.role] ?? []).map((sec) =>
-    isSubAdmin ? { ...sec, items: sec.items.filter((i) => i.href !== '/broker' && i.href !== '/broker-api' && i.href !== '/master/sub-admins') } : sec,
+    isSubAdmin ? { ...sec, items: sec.items.filter((i) => i.href !== '/broker' && i.href !== '/broker-api' && i.href !== '/master/sub-admins' && i.href !== '/master/automation') } : sec,
   );
   const workspaceLabel = user.role === 'ADMIN' ? 'Admin workspace' : user.role === 'SUB_ADMIN' ? 'Sub-admin workspace' : user.role === 'MASTER' ? (isSubAdmin ? 'Sub-admin · master workspace' : 'Master workspace') : 'Client workspace';
 

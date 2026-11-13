@@ -373,6 +373,8 @@ model Strategy {
   maxQuantityPerOrder Int?
   /// Secret token of the TradingView / alert webhook (POST /hooks/tv/:token). Null = webhook off.
   webhookToken       String?        @unique
+  /// Automation settings (schedule, trailing SL, daily max loss / profit, re-entry, Chartink). See automation.ts.
+  automation         Json?
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
 
@@ -464,6 +466,12 @@ model MasterTrade {
   exitReason      String?
   /// Master-side P&L of the exited quantity of this signal (per master quantity).
   realizedPnl     Decimal?    @db.Decimal(18, 4)
+  /// Trailing stop loss: every trailPoints the price moves in favour, the stop loss moves trailPoints too.
+  trailPoints     Decimal?    @db.Decimal(18, 4)
+  /// Price the next trailing step is measured from (entry, then each step).
+  trailAnchor     Decimal?    @db.Decimal(18, 4)
+  /// 0 = first entry; 1, 2 = automatic re-entry after a stop loss.
+  reentryCount    Int         @default(0)
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 

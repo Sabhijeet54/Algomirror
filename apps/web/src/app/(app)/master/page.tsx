@@ -5,7 +5,6 @@ import { useState } from 'react';
 import type { StrategyView } from '@ctp/types';
 import { FollowersCard, PaperModeNotice, StrategiesCard, StrategyDialog } from '@/components/master-desk';
 import { PageHeader } from '@/components/page-header';
-import { WebhookCard } from '@/components/webhook-card';
 import { Button } from '@/components/ui/button';
 import { useMasterStrategies } from '@/lib/trading';
 
@@ -31,7 +30,6 @@ export default function MasterStrategiesPage() {
       <div className="grid gap-4">
         <StrategiesCard list={list} loading={strategies.isLoading} selectedId={sel?.id} onSelect={setSelected} onEdit={(s) => setEdit({ open: true, s })} />
         {sel ? <FollowersCard strategy={sel} /> : null}
-        {sel ? <WebhookCard strategy={sel} /> : null}
       </div>
       <StrategyDialog open={edit.open} strategy={edit.s} onOpenChange={(o) => setEdit((p) => ({ ...p, open: o }))} />
     </>
