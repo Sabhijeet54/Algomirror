@@ -14,7 +14,7 @@ import {
   trailStep,
 } from '../../src/trading/automation';
 import { AutomationService } from '../../src/trading/automation.service';
-import { parseAlert } from '../../src/trading/webhook-alert';
+import { exitLevels, parseAlert } from '../../src/trading/webhook-alert';
 
 describe('automation settings', () => {
   it('fills defaults and never throws on stored junk', () => {
@@ -162,6 +162,29 @@ describe('Chartink', () => {
   });
 });
 
+describe('target / stop loss in % of premium', () => {
+  it('schedule legs send % or points', () => {
+    const [sc] = normalizeAutomation({
+      schedules: [{ enabled: true, legs: [{ underlying: 'NIFTY' }], targetPoints: 50, targetUnit: 'PCT', stoplossPoints: 20, stoplossUnit: 'POINTS' }],
+    }).schedules;
+    const body = legAlert(sc!.legs[0]!, sc!);
+    expect(body).toMatchObject({ targetPct: 50, stoplossPoints: 20 });
+    expect(body).not.toHaveProperty('targetPoints');
+  });
+
+  it('rejects a stop loss of 100% or more', () => {
+    expect(() => normalizeAutomation({ schedules: [{ stoplossPoints: 100, stoplossUnit: 'PCT' }] })).toThrow(/below 100/);
+  });
+
+  it('turns % into prices from the entry premium', () => {
+    const a = parseAlert({ action: 'BUY', symbol: 'X', targetPct: 50, stoplossPct: 20 });
+    expect(exitLevels(a, 'BUY', 150)).toEqual({ targetPrice: 225, stopLossPrice: 120 });
+    expect(exitLevels(a, 'SELL', 150)).toEqual({ targetPrice: 75, stopLossPrice: 180 });
+    // points win over %
+    expect(exitLevels({ ...a, targetPoints: 10 }, 'BUY', 150).targetPrice).toBe(160);
+  });
+});
+
 describe('AutomationService', () => {
   const make = (automation: unknown, opts: { halted?: boolean } = {}) => {
     const store = new Map<string, string>();
@@ -172,6 +195,7 @@ describe('AutomationService', () => {
       multi: jest.fn(() => {
         const m = {
           sadd: (k: string, ...v: string[]) => (sets.set(k, new Set([...(sets.get(k) ?? []), ...v])), m),
+          set: (k: string, v: string) => (store.set(k, v), m),
           expire: () => m,
           exec: async () => [],
         };
@@ -216,10 +240,10 @@ describe('AutomationService', () => {
       })),
     };
     const hooks = {
-      runAlert: jest.fn(
-        async (_st: unknown, body: { underlying?: string; option?: string }) =>
-          `NFO:${body.underlying}17NOV26${body.underlying === 'NIFTY' ? '25200' : '55000'}${body.option}`,
-      ),
+      runAlert: jest.fn(async (_st: unknown, body: { underlying?: string; option?: string }, _src: string, o?: { tradeIds?: string[] }) => {
+        o?.tradeIds?.push(`t-${body.underlying}-${body.option}`);
+        return `NFO:${body.underlying}17NOV26${body.underlying === 'NIFTY' ? '25200' : '55000'}${body.option}`;
+      }),
       logEvent: jest.fn(async () => undefined),
     };
     const prices = { get: jest.fn(() => 230) };
@@ -257,7 +281,7 @@ describe('AutomationService', () => {
     await svc.tick(new Date('2026-11-13T03:50:10Z')); // Fri 09:20 IST
     await svc.tick(new Date('2026-11-13T03:51:10Z')); // 09:21 — already done
     expect(hooks.runAlert).toHaveBeenCalledTimes(2);
-    expect(hooks.runAlert).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: 'SELL', option: 'PE', strike: 'ATM' }), 'Straddle 09:20');
+    expect(hooks.runAlert).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: 'SELL', option: 'PE', strike: 'ATM' }), 'Straddle 09:20', expect.anything());
     await svc.tick(new Date('2026-11-13T09:45:30Z')); // 15:15 IST
     expect(signals.squareOffStrategy).not.toHaveBeenCalled();
     expect(hooks.logEvent).toHaveBeenCalledWith('st1', expect.objectContaining({ action: 'Straddle 15:15', message: 'Timed exit: 2 closed' }));
@@ -284,10 +308,30 @@ describe('AutomationService', () => {
     await svc.tick(new Date('2026-11-13T03:50:10Z')); // 09:20
     await svc.tick(new Date('2026-11-13T05:30:10Z')); // 11:00
     expect(hooks.runAlert).toHaveBeenCalledTimes(3);
-    expect(hooks.runAlert).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ underlying: 'BANKNIFTY' }), 'BNF 11:00');
+    expect(hooks.runAlert).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ underlying: 'BANKNIFTY' }), 'BNF 11:00', expect.anything());
     await svc.tick(new Date('2026-11-13T06:00:10Z')); // 11:30 — BNF exit only
     expect(signals.exitStrategyMatching).toHaveBeenCalledTimes(1);
     expect(hooks.logEvent).toHaveBeenCalledWith('st1', expect.objectContaining({ action: 'BNF 11:30', message: 'Timed exit: 1 closed' }));
+  });
+
+  it('stops only the schedule that reached its own daily max loss', async () => {
+    const { svc, hooks, signals, trades } = make({
+      schedules: [
+        { ...SCHED.schedules[0], maxLoss: 2000 },
+        { name: 'BNF', enabled: true, entryTime: '11:00', exitTime: '15:00', days: [5], legs: [{ underlying: 'BANKNIFTY', option: 'CE', side: 'BUY' }] },
+      ],
+    });
+    await svc.tick(new Date('2026-11-13T03:50:10Z')); // 09:20, straddle entered
+    // Short CE sold at 200, now 230 (price mock): −30 × 75 = −2250 ≤ −2000.
+    trades.push({ side: 'SELL', exchange: 'NFO', symbol: 'NIFTY17NOV2625200CE', price: 200, averagePrice: 200, quantity: 75, filledQuantity: 75, closedQuantity: 0, realizedPnl: 0 });
+    await svc.tick(new Date('2026-11-13T04:00:10Z')); // 09:30
+    expect(signals.exitStrategyMatching).toHaveBeenCalledTimes(1);
+    expect(signals.squareOffStrategy).not.toHaveBeenCalled();
+    expect(hooks.logEvent).toHaveBeenCalledWith('st1', expect.objectContaining({ action: 'Straddle LIMIT', message: expect.stringMatching(/max loss reached \(P&L -2250\): 2 closed/) }));
+    await svc.tick(new Date('2026-11-13T04:01:10Z')); // already stopped: no second exit
+    expect(signals.exitStrategyMatching).toHaveBeenCalledTimes(1);
+    await svc.tick(new Date('2026-11-13T05:30:10Z')); // 11:00 — the other schedule still trades
+    expect(hooks.runAlert).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ underlying: 'BANKNIFTY' }), 'BNF 11:00', expect.anything());
   });
 
   it('lists schedules of all strategies and saves them into the strategy each one names', async () => {
@@ -374,7 +418,7 @@ describe('AutomationService', () => {
         trailPoints: 10,
       }),
       'RE-ENTRY 1/1',
-      { reentryCount: 1 },
+      expect.objectContaining({ reentryCount: 1 }),
     );
   });
 

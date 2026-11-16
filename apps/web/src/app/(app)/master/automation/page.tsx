@@ -198,7 +198,8 @@ function SettingsTab({ strategyId, tab }: { strategyId: string; tab: Exclude<Tab
           </CardTitle>
           <CardDescription>
             When today&apos;s P&amp;L of this strategy (booked + open, on your signal quantity) reaches a limit, every position of the strategy is squared off
-            for you and all clients, and no new trade is taken in this strategy until tomorrow.
+            for you and all clients, and no new trade is taken in this strategy until tomorrow. Each timed schedule can also have its own limit
+            (Time entry / exit tab).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -296,7 +297,11 @@ const newSchedule = (strategyId: string, n: number): ScheduleRow => ({
   product: 'INTRADAY',
   legs: [],
   targetPoints: null,
+  targetUnit: 'POINTS',
   stoplossPoints: null,
+  stoplossUnit: 'POINTS',
+  maxLoss: null,
+  maxProfit: null,
 });
 
 /** Every timed entry / exit of all my strategies; each one picks the strategy its signals go into. */
@@ -392,14 +397,26 @@ function ScheduleEditor({
   const setLeg = (i: number, patch: Partial<ScheduleLeg>) => onChange({ legs: s.legs.map((l, n) => (n === i ? { ...l, ...patch } : l)) });
   const strategy = strategies.find((x) => x.id === s.strategyId);
   return (
-    <Card>
-      <CardContent className="space-y-5 pt-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+    <Card className={cn(!s.enabled && 'opacity-90')}>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-6 py-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="truncate font-semibold">{s.name || 'Untitled schedule'}</span>
+            <Badge variant={s.enabled ? 'success' : 'secondary'}>{s.enabled ? 'Running' : 'Paused'}</Badge>
+          </div>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            {strategy?.name ?? 'No strategy'} · {s.entryTime}
+            {s.exitTime ? ` to ${s.exitTime}` : ''} · {s.legs.length} leg{s.legs.length === 1 ? '' : 's'}
+          </p>
+        </div>
+        <div className="flex items-center gap-1">
           <Toggle checked={s.enabled} onChange={(v) => onChange({ enabled: v })} label={s.enabled ? 'On' : 'Off'} />
-          <Button size="sm" variant="ghost" onClick={onRemove}>
+          <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={onRemove}>
             <Trash2 /> Delete
           </Button>
         </div>
+      </div>
+      <CardContent className="space-y-6 pt-5">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Strategy (signals go into)" hint={strategy && strategy.status !== 'ACTIVE' ? 'Not active — activate it for this schedule to trade.' : undefined}>
             <Select value={s.strategyId} onChange={(e) => onChange({ strategyId: e.target.value })}>
@@ -523,14 +540,42 @@ function ScheduleEditor({
           )}
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Target (points per leg)" hint="Empty = none">
-            <Input type="number" min={0} step="0.05" value={s.targetPoints ?? ''} onChange={(e) => onChange({ targetPoints: numOrNull(e.target.value) })} />
-          </Field>
-          <Field label="Stop loss (points per leg)" hint="Empty = none">
-            <Input type="number" min={0} step="0.05" value={s.stoplossPoints ?? ''} onChange={(e) => onChange({ stoplossPoints: numOrNull(e.target.value) })} />
-          </Field>
-        </div>
+        <Section title="Target and stop loss" note="Per leg, from each leg's entry price. % is of the entry premium (20% of ₹150 = 30 points).">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Target" hint="Empty = none">
+              <UnitInput
+                value={s.targetPoints}
+                unit={s.targetUnit}
+                onValue={(v) => onChange({ targetPoints: v })}
+                onUnit={(u) => onChange({ targetUnit: u })}
+                placeholder={s.targetUnit === 'PCT' ? 'e.g. 50' : 'e.g. 40'}
+              />
+            </Field>
+            <Field label="Stop loss" hint="Empty = none">
+              <UnitInput
+                value={s.stoplossPoints}
+                unit={s.stoplossUnit}
+                onValue={(v) => onChange({ stoplossPoints: v })}
+                onUnit={(u) => onChange({ stoplossUnit: u })}
+                placeholder={s.stoplossUnit === 'PCT' ? 'e.g. 25' : 'e.g. 20'}
+              />
+            </Field>
+          </div>
+        </Section>
+
+        <Section
+          title="Daily max loss / profit for this schedule"
+          note="Counts only this schedule's trades today (and their re-entries). When reached, its positions are squared off and it takes no more trades today. Other schedules keep running."
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Max loss (₹)" hint="Empty = no limit">
+              <Input type="number" min={0} value={s.maxLoss ?? ''} onChange={(e) => onChange({ maxLoss: numOrNull(e.target.value) })} placeholder="e.g. 3000" />
+            </Field>
+            <Field label="Max profit (₹)" hint="Empty = no limit">
+              <Input type="number" min={0} value={s.maxProfit ?? ''} onChange={(e) => onChange({ maxProfit: numOrNull(e.target.value) })} placeholder="e.g. 6000" />
+            </Field>
+          </div>
+        </Section>
       </CardContent>
     </Card>
   );
@@ -644,18 +689,85 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 
 function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
-    <label className="flex cursor-pointer items-center gap-3 text-sm">
+    <label className="inline-flex cursor-pointer select-none items-center gap-2.5 text-sm font-medium">
       <button
         type="button"
         role="switch"
         aria-checked={checked}
         onClick={() => onChange(!checked)}
-        className={cn('relative h-5 w-9 shrink-0 rounded-full transition-colors', checked ? 'bg-primary' : 'bg-muted-foreground/30')}
+        className={cn(
+          'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full p-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+          checked ? 'bg-primary' : 'bg-muted-foreground/30',
+        )}
       >
-        <span className={cn('absolute top-0.5 size-4 rounded-full bg-white shadow transition-transform', checked ? 'translate-x-4' : 'translate-x-0.5')} />
+        <span
+          className={cn('pointer-events-none absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow-sm transition-transform duration-200', checked ? 'translate-x-5' : 'translate-x-0')}
+        />
       </button>
-      {label}
+      <span className="min-w-[1.75rem]">{label}</span>
     </label>
+  );
+}
+
+/** A small titled block inside a card. */
+function Section({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-3 border-t pt-5">
+      <div>
+        <h3 className="text-sm font-semibold">{title}</h3>
+        {note ? <p className="mt-0.5 text-xs text-muted-foreground">{note}</p> : null}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** Number input with a Points / % switch on its right. */
+function UnitInput({
+  value,
+  unit,
+  onValue,
+  onUnit,
+  placeholder,
+}: {
+  value: number | null;
+  unit: 'POINTS' | 'PCT';
+  onValue: (v: number | null) => void;
+  onUnit: (u: 'POINTS' | 'PCT') => void;
+  placeholder?: string;
+}) {
+  return (
+    <div className="flex items-stretch gap-2">
+      <div className="relative min-w-0 flex-1">
+        <Input
+          type="number"
+          min={0}
+          step={unit === 'PCT' ? '0.1' : '0.05'}
+          value={value ?? ''}
+          onChange={(e) => onValue(numOrNull(e.target.value))}
+          placeholder={placeholder}
+          className="pr-10"
+        />
+        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">{unit === 'PCT' ? '%' : 'pts'}</span>
+      </div>
+      <div role="radiogroup" aria-label="Unit" className="inline-flex shrink-0 rounded-md border bg-muted/50 p-0.5">
+        {(['POINTS', 'PCT'] as const).map((u) => (
+          <button
+            key={u}
+            type="button"
+            role="radio"
+            aria-checked={unit === u}
+            onClick={() => onUnit(u)}
+            className={cn(
+              'rounded px-3 text-xs font-medium transition-colors',
+              unit === u ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {u === 'PCT' ? '%' : 'Points'}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

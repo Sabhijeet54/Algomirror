@@ -25,6 +25,9 @@ import { WebhookService } from './webhook.service';
 
 const D = (v: Prisma.Decimal | null | undefined) => (v == null ? null : Number(v));
 const TICK_MS = 5_000;
+const TTL = 36 * 3600;
+/** Which schedule (its day key base) a signal was entered by — so a re-entry of it counts for that schedule too. */
+const SIG_SCHED = (signalId: string) => `ctp:auto:sigsched:${signalId}`;
 
 /**
  * Runs the strategy automation: timed entry / exit (IST), the strategy daily max loss / profit and re-entry
@@ -146,6 +149,7 @@ export class AutomationService implements OnApplicationBootstrap, OnModuleDestro
         const a = readAutomation(st.automation);
         try {
           await this.runSchedule(st, a, t);
+          await this.checkScheduleLimits(st, a, t);
           await this.checkDailyLimit(st, a, t);
         } catch (err) {
           this.logger.warn(`${st.name}: ${(err as Error).message}`);
@@ -174,14 +178,17 @@ export class AutomationService implements OnApplicationBootstrap, OnModuleDestro
     if (isDue(s.entryTime, t.hhmm) && (await this.once(`${base}:in`))) {
       if (await this.redis.get(dailyHaltKey(st.id, t.date))) {
         await this.hooks.logEvent(st.id, { ok: false, action: label, symbol: null, message: 'Timed entry skipped — daily limit already reached' });
+      } else if (await this.redis.get(`${base}:halt`)) {
+        await this.hooks.logEvent(st.id, { ok: false, action: label, symbol: null, message: 'Timed entry skipped — this schedule reached its daily limit' });
       } else {
         this.logger.log(`${st.name}: ${label} (${s.legs.length} legs)`);
         const placed: string[] = [];
+        const tradeIds: string[] = [];
         for (const leg of s.legs) {
-          const sym = await this.hooks.runAlert(st, legAlert(leg, s), label);
+          const sym = await this.hooks.runAlert(st, legAlert(leg, s), label, { tradeIds });
           if (sym) placed.push(sym);
         }
-        if (placed.length) await this.redis.multi().sadd(`${base}:syms`, ...placed).expire(`${base}:syms`, 36 * 3600).exec();
+        await this.remember(base, placed, tradeIds);
       }
     }
     if (s.exitTime && isDue(s.exitTime, t.hhmm) && (await this.once(`${base}:out`))) {
@@ -197,6 +204,41 @@ export class AutomationService implements OnApplicationBootstrap, OnModuleDestro
         action,
         symbol: null,
         message: `Timed exit: ${r.closed} closed${r.failed ? `, ${r.failed} failed (${r.errors.slice(0, 2).join('; ')})` : ''}`,
+      });
+    }
+  }
+
+  /** Adds contracts / signal ids to a schedule's day record. */
+  private async remember(base: string, syms: string[], tradeIds: string[]): Promise<void> {
+    if (!syms.length && !tradeIds.length) return;
+    const m = this.redis.multi();
+    if (syms.length) m.sadd(`${base}:syms`, ...syms).expire(`${base}:syms`, TTL);
+    if (tradeIds.length) m.sadd(`${base}:ids`, ...tradeIds).expire(`${base}:ids`, TTL);
+    for (const id of tradeIds) m.set(SIG_SCHED(id), base, 'EX', TTL);
+    await m.exec();
+  }
+
+  /**
+   * Each schedule's own daily max loss / profit: P&L of the trades it entered today (and their re-entries). When a
+   * limit is reached its contracts are squared off and it takes no more trades today. Other schedules carry on.
+   */
+  private async checkScheduleLimits(st: Strategy, a: AutomationSettings, t: ReturnType<typeof istNow>): Promise<void> {
+    for (const s of a.schedules) {
+      if (s.maxLoss == null && s.maxProfit == null) continue;
+      const base = `ctp:auto:sched:${st.id}:${t.date}:${s.id}`;
+      const ids = await this.redis.smembers(`${base}:ids`);
+      if (!ids.length || (await this.redis.get(`${base}:halt`))) continue;
+      const pnl = await this.pnlOf({ id: { in: ids } });
+      const hit = dailyLimitHit(pnl, s);
+      if (!hit || (await this.redis.set(`${base}:halt`, hit, 'EX', TTL, 'NX')) !== 'OK') continue;
+      this.logger.warn(`${st.name}: ${s.name} daily max ${hit.toLowerCase()} hit (P&L ${pnl}) — exiting its trades`);
+      const syms = new Set(await this.redis.smembers(`${base}:syms`));
+      const r = await this.signals.exitStrategyMatching(st.id, st.masterUserId, (p) => syms.has(`${p.exchange}:${p.symbol}`));
+      await this.hooks.logEvent(st.id, {
+        ok: !r.failed,
+        action: `${s.name} LIMIT`,
+        symbol: null,
+        message: `${s.name}: max ${hit === 'LOSS' ? 'loss' : 'profit'} reached (P&L ${pnl}): ${r.closed} closed, no more trades of this schedule today${r.failed ? `; ${r.failed} failed` : ''}`,
       });
     }
   }
@@ -220,12 +262,14 @@ export class AutomationService implements OnApplicationBootstrap, OnModuleDestro
   }
 
   /** Realized + open P&L (master quantity) of the strategy's signals of the IST day. */
-  private async strategyPnl(strategyId: string, dayStart: Date): Promise<number> {
+  private strategyPnl(strategyId: string, dayStart: Date): Promise<number> {
+    return this.pnlOf({ strategyId, OR: [{ signalStatus: 'OPEN' }, { signalStatus: 'CLOSED', exitedAt: { gte: dayStart } }] });
+  }
+
+  /** Realized + open P&L (master quantity) of the signals matching `where`. */
+  private async pnlOf(where: Prisma.MasterTradeWhereInput): Promise<number> {
     const rows = await this.prisma.masterTrade.findMany({
-      where: {
-        strategyId,
-        OR: [{ signalStatus: 'OPEN' }, { signalStatus: 'CLOSED', exitedAt: { gte: dayStart } }],
-      },
+      where,
       select: {
         side: true,
         exchange: true,
@@ -268,6 +312,8 @@ export class AutomationService implements OnApplicationBootstrap, OnModuleDestro
       const exits = a.schedules.filter((x) => x.enabled && x.exitTime && x.days.includes(t.weekday)).map((x) => x.exitTime!);
       if (exits.length && t.hhmm >= exits.sort().at(-1)!) return;
       if (await this.redis.get(dailyHaltKey(st.id, t.date))) return;
+      const schedBase = await this.redis.get(SIG_SCHED(sig.id));
+      if (schedBase && (await this.redis.get(`${schedBase}:halt`))) return;
       if (!(await this.once(`ctp:auto:reentry:${sig.id}`))) return;
       // Same trade again at MARKET, with the same target / stop loss distance from the new entry.
       const entry = D(sig.averagePrice) ?? D(sig.price);
@@ -279,7 +325,8 @@ export class AutomationService implements OnApplicationBootstrap, OnModuleDestro
       const slDist = from != null && sl != null ? Math.abs(from - sl) : null;
       const tpDist = entry != null && tp != null ? Math.abs(tp - entry) : null;
       const n = sig.reentryCount + 1;
-      await this.hooks.runAlert(
+      const tradeIds: string[] = [];
+      const sym = await this.hooks.runAlert(
         st,
         {
           action: sig.side,
@@ -292,8 +339,10 @@ export class AutomationService implements OnApplicationBootstrap, OnModuleDestro
           ...(trail ? { trailPoints: trail } : {}),
         },
         `RE-ENTRY ${n}/${a.reentry.max}`,
-        { reentryCount: n },
+        { reentryCount: n, tradeIds },
       );
+      // A re-entry of a schedule's trade belongs to that schedule (its P&L, limit and timed exit).
+      if (schedBase) await this.remember(schedBase, sym ? [sym] : [], tradeIds);
     } catch (err) {
       this.logger.warn(`Re-entry of ${sig.symbol}: ${(err as Error).message}`);
     }
@@ -301,6 +350,6 @@ export class AutomationService implements OnApplicationBootstrap, OnModuleDestro
 
   /** true the first time a key is claimed (across restarts / instances). */
   private async once(key: string): Promise<boolean> {
-    return (await this.redis.set(key, '1', 'EX', 36 * 3600, 'NX')) === 'OK';
+    return (await this.redis.set(key, '1', 'EX', TTL, 'NX')) === 'OK';
   }
 }

@@ -30,6 +30,8 @@ export interface AlertInput {
   stoploss?: unknown;
   targetPoints?: unknown;
   stoplossPoints?: unknown;
+  targetPct?: unknown;
+  stoplossPct?: unknown;
   trailPoints?: unknown;
 }
 
@@ -57,6 +59,9 @@ export interface ParsedAlert {
   stoploss?: number;
   targetPoints?: number;
   stoplossPoints?: number;
+  /** Target / stop loss as % of the entry price (used when the points / absolute price are not given). */
+  targetPct?: number;
+  stoplossPct?: number;
   /** Trailing stop loss step in points. */
   trailPoints?: number;
 }
@@ -178,6 +183,8 @@ export function parseAlert(input: AlertInput): ParsedAlert {
     ['stoploss', input.stoploss],
     ['targetPoints', input.targetPoints],
     ['stoplossPoints', input.stoplossPoints],
+    ['targetPct', input.targetPct],
+    ['stoplossPct', input.stoplossPct],
     ['trailPoints', input.trailPoints],
   ];
   for (const [k, v] of fields) {
@@ -189,6 +196,7 @@ export function parseAlert(input: AlertInput): ParsedAlert {
   if (out.lots != null && (!Number.isInteger(out.lots) || out.lots < 1)) throw new AlertError('"lots" must be a whole number ≥ 1.');
   if (out.qty != null && (!Number.isInteger(out.qty) || out.qty < 1)) throw new AlertError('"qty" must be a whole number ≥ 1.');
   if (orderType === 'LIMIT' && !out.price) throw new AlertError('A LIMIT order needs "price".');
+  if (out.stoplossPct != null && out.stoplossPct >= 100) throw new AlertError('"stoplossPct" must be below 100.');
   return out;
 }
 
@@ -230,14 +238,24 @@ export function derivativeSymbol(underlying: string, expiry: string, option: 'CE
   return s;
 }
 
-/** Target / stop loss: absolute prices win; else points from the entry price, in the trade's direction. */
-export function exitLevels(a: Pick<ParsedAlert, 'target' | 'stoploss' | 'targetPoints' | 'stoplossPoints'>, side: 'BUY' | 'SELL', entry: number | null) {
+/**
+ * Target / stop loss: absolute prices win; else points from the entry price, in the trade's direction; else % of the
+ * entry price (e.g. 20% of a ₹150 premium = 30 points, at least one 0.05 tick).
+ */
+export function exitLevels(
+  a: Pick<ParsedAlert, 'target' | 'stoploss' | 'targetPoints' | 'stoplossPoints' | 'targetPct' | 'stoplossPct'>,
+  side: 'BUY' | 'SELL',
+  entry: number | null,
+) {
   const dir = side === 'BUY' ? 1 : -1;
   const round = (n: number) => Math.round(n * 20) / 20; // 0.05 tick
-  const targetPrice = a.target ?? (a.targetPoints && entry ? round(entry + dir * a.targetPoints) : undefined);
-  const stop = a.stoploss ?? (a.stoplossPoints && entry ? round(entry - dir * a.stoplossPoints) : undefined);
+  const pts = (points?: number, pct?: number) => points || (pct && entry ? Math.max(0.05, round((entry * pct) / 100)) : undefined);
+  const tPts = pts(a.targetPoints, a.targetPct);
+  const sPts = pts(a.stoplossPoints, a.stoplossPct);
+  const targetPrice = a.target ?? (tPts && entry ? round(entry + dir * tPts) : undefined);
+  const stop = a.stoploss ?? (sPts && entry ? round(entry - dir * sPts) : undefined);
   const stopLossPrice = stop != null && stop > 0 ? stop : undefined;
-  if ((a.targetPoints || a.stoplossPoints) && !entry && a.target == null && a.stoploss == null) {
+  if ((a.targetPoints || a.stoplossPoints || a.targetPct || a.stoplossPct) && !entry && a.target == null && a.stoploss == null) {
     throw new AlertError('Live price not available yet, so target / stop loss points can not be set — try again or send absolute "target" / "stoploss".');
   }
   return { targetPrice, stopLossPrice };

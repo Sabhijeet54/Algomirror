@@ -130,14 +130,20 @@ export class WebhookService {
    * Places one alert-shaped trade for automation (schedule legs, re-entry, Chartink) and logs the result in the
    * strategy's alert log under `source`. Never throws. Returns the contract traded ("NFO:NIFTY…CE"), or null.
    */
-  async runAlert(strategy: Strategy, body: Record<string, unknown>, source: string, opts: { reentryCount?: number } = {}): Promise<string | null> {
+  async runAlert(
+    strategy: Strategy,
+    body: Record<string, unknown>,
+    source: string,
+    opts: { reentryCount?: number; tradeIds?: string[] } = {},
+  ): Promise<string | null> {
     let what: string | null = null;
     try {
       const a = parseAlert(body);
       what = a.symbol ?? a.underlying ?? null;
       const res: { symbol: string | null; message: string; tradeId?: string } =
-        a.action === 'EXIT' || a.action === 'EXIT_ALL' ? await this.exit(strategy, a) : await this.enter(strategy, a, opts);
+        a.action === 'EXIT' || a.action === 'EXIT_ALL' ? await this.exit(strategy, a) : await this.enter(strategy, a, { reentryCount: opts.reentryCount });
       await this.log(strategy.id, { ok: true, action: source, symbol: res.symbol, message: res.message, tradeId: res.tradeId });
+      if (res.tradeId) opts.tradeIds?.push(res.tradeId);
       return res.symbol ?? '';
     } catch (err) {
       await this.log(strategy.id, { ok: false, action: source, symbol: what, message: this.errorText(err, strategy.id) });

@@ -811,8 +811,14 @@ export interface Schedule {
   expiry: 'nearest' | 'next' | 'monthly';
   product: 'INTRADAY' | 'CARRY_FORWARD';
   legs: ScheduleLeg[];
+  /** Points, or % of the entry premium when the unit is PCT. */
   targetPoints: number | null;
+  targetUnit: 'POINTS' | 'PCT';
   stoplossPoints: number | null;
+  stoplossUnit: 'POINTS' | 'PCT';
+  /** This schedule's own daily max loss / profit (₹). */
+  maxLoss: number | null;
+  maxProfit: number | null;
 }
 /** A schedule with the strategy it trades in (Time entry / exit tab lists all strategies' schedules). */
 export interface ScheduleRow extends Schedule {

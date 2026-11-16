@@ -29,9 +29,18 @@ export interface Schedule {
   expiry: 'nearest' | 'next' | 'monthly';
   product: 'INTRADAY' | 'CARRY_FORWARD';
   legs: ScheduleLeg[];
+  /** Target per leg: points, or % of the entry price (premium) when targetUnit is PCT. */
   targetPoints: number | null;
+  targetUnit: TargetUnit;
+  /** Stop loss per leg: points, or % of the entry price (premium) when stoplossUnit is PCT. */
   stoplossPoints: number | null;
+  stoplossUnit: TargetUnit;
+  /** This schedule's own daily max loss / profit in ₹ (its trades only): reached → its trades exit, no more today. */
+  maxLoss: number | null;
+  maxProfit: number | null;
 }
+
+export type TargetUnit = 'POINTS' | 'PCT';
 
 export const MAX_SCHEDULES = 10;
 
@@ -62,7 +71,11 @@ export const DEFAULT_SCHEDULE: Omit<Schedule, 'id' | 'name'> = {
   product: 'INTRADAY',
   legs: [],
   targetPoints: null,
+  targetUnit: 'POINTS',
   stoplossPoints: null,
+  stoplossUnit: 'POINTS',
+  maxLoss: null,
+  maxProfit: null,
 };
 
 export const DEFAULT_AUTOMATION: AutomationSettings = {
@@ -146,6 +159,12 @@ export function normalizeSchedule(raw: unknown, n: number): Schedule {
       lots: posInt(l.lots, `${leg} lots`, 1, 100),
     };
   });
+  const targetUnit = oneOf(s.targetUnit, ['POINTS', 'PCT'] as const, 'POINTS', `${name} target unit`);
+  const stoplossUnit = oneOf(s.stoplossUnit, ['POINTS', 'PCT'] as const, 'POINTS', `${name} stop loss unit`);
+  const targetPoints = posNum(s.targetPoints, `${name} target`);
+  const stoplossPoints = posNum(s.stoplossPoints, `${name} stop loss`);
+  if (targetUnit === 'PCT' && targetPoints != null && targetPoints > 1000) throw new AutomationError(`${name}: target % must be at most 1000`);
+  if (stoplossUnit === 'PCT' && stoplossPoints != null && stoplossPoints >= 100) throw new AutomationError(`${name}: stop loss % must be below 100`);
   const enabled = s.enabled === true;
   if (enabled && !legs.length) throw new AutomationError(`${name}: add at least one leg`);
   if (enabled && !days.length) throw new AutomationError(`${name}: pick at least one day`);
@@ -159,8 +178,12 @@ export function normalizeSchedule(raw: unknown, n: number): Schedule {
     expiry: (['nearest', 'next', 'monthly'] as const).find((e) => e === String(s.expiry ?? '').toLowerCase()) ?? 'nearest',
     product: oneOf(s.product, ['INTRADAY', 'CARRY_FORWARD'] as const, 'INTRADAY', `${name} product`),
     legs,
-    targetPoints: posNum(s.targetPoints, `${name} target points`),
-    stoplossPoints: posNum(s.stoplossPoints, `${name} stop loss points`),
+    targetPoints,
+    targetUnit,
+    stoplossPoints,
+    stoplossUnit,
+    maxLoss: posNum(s.maxLoss, `${name} max loss`),
+    maxProfit: posNum(s.maxProfit, `${name} max profit`),
   };
 }
 
@@ -259,8 +282,8 @@ export function legAlert(leg: ScheduleLeg, s: Schedule): Record<string, unknown>
     expiry: s.expiry,
     lots: leg.lots,
     product: s.product,
-    ...(s.targetPoints ? { targetPoints: s.targetPoints } : {}),
-    ...(s.stoplossPoints ? { stoplossPoints: s.stoplossPoints } : {}),
+    ...(s.targetPoints ? { [s.targetUnit === 'PCT' ? 'targetPct' : 'targetPoints']: s.targetPoints } : {}),
+    ...(s.stoplossPoints ? { [s.stoplossUnit === 'PCT' ? 'stoplossPct' : 'stoplossPoints']: s.stoplossPoints } : {}),
   };
 }
 
@@ -310,7 +333,7 @@ export function dayPnl(rows: DaySignal[]): number {
 }
 
 /** 'LOSS' / 'PROFIT' when the day's P&L reached a limit, else null. */
-export function dailyLimitHit(pnl: number, daily: AutomationSettings['daily']): 'LOSS' | 'PROFIT' | null {
+export function dailyLimitHit(pnl: number, daily: { maxLoss: number | null; maxProfit: number | null }): 'LOSS' | 'PROFIT' | null {
   if (daily.maxLoss != null && pnl <= -daily.maxLoss) return 'LOSS';
   if (daily.maxProfit != null && pnl >= daily.maxProfit) return 'PROFIT';
   return null;
