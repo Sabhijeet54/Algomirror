@@ -4,7 +4,10 @@
  * the Chartink scanner webhook.
  */
 
-export class AutomationError extends Error {}
+import { AutomationError } from './automation-error';
+import { DEFAULT_ORB, normalizeOrb, type OrbSettings } from './orb';
+
+export { AutomationError };
 
 export interface ScheduleLeg {
   underlying: string;
@@ -60,6 +63,8 @@ export interface AutomationSettings {
     stoplossPct: number | null;
     maxStocks: number;
   };
+  /** Opening range breakout (see orb.ts). */
+  orb: OrbSettings;
 }
 
 export const DEFAULT_SCHEDULE: Omit<Schedule, 'id' | 'name'> = {
@@ -92,6 +97,7 @@ export const DEFAULT_AUTOMATION: AutomationSettings = {
     stoplossPct: null,
     maxStocks: 5,
   },
+  orb: DEFAULT_ORB,
 };
 
 type Obj = Record<string, unknown>;
@@ -232,6 +238,7 @@ export function normalizeAutomation(input: unknown): AutomationSettings {
       stoplossPct: posNum(ck.stoplossPct, 'Chartink stop loss %'),
       maxStocks: posInt(ck.maxStocks, 'Chartink max stocks', 5, 50),
     },
+    orb: normalizeOrb(i.orb),
   };
 }
 

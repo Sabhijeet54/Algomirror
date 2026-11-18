@@ -1,6 +1,7 @@
 import { WebhookController } from './webhook.controller';
 import { WebhookService } from './webhook.service';
 import { AutomationService } from './automation.service';
+import { OrbService } from './orb.service';
 import { MasterOrderService } from './master-order.service';
 import { Module } from '@nestjs/common';
 import { BrokersModule } from '../brokers/brokers.module';
@@ -22,7 +23,7 @@ import { TradingService } from './trading.service';
 @Module({
   imports: [BrokersModule, MarketDataModule],
   controllers: [MasterController, FollowerController, WebhookController],
-  providers: [WebhookService, AutomationService, MasterOrderService, SignalService, ClientAssignService, ClientSummaryService, PositionResizeService, TradingService, ClientRegistryService, CopyEngineService, CopyReconcilerService, OrderMirrorService, MasterPollerService, RiskService],
+  providers: [WebhookService, AutomationService, OrbService, MasterOrderService, SignalService, ClientAssignService, ClientSummaryService, PositionResizeService, TradingService, ClientRegistryService, CopyEngineService, CopyReconcilerService, OrderMirrorService, MasterPollerService, RiskService],
   exports: [MasterOrderService, SignalService, ClientAssignService, ClientSummaryService, CopyEngineService, CopyReconcilerService, RiskService, ClientRegistryService],
 })
 export class TradingModule {}

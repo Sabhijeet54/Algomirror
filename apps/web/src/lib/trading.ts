@@ -832,10 +832,36 @@ export interface AutomationSettings {
   daily: { maxLoss: number | null; maxProfit: number | null };
   reentry: { enabled: boolean; max: number };
   chartink: { enabled: boolean; side: 'BUY' | 'SELL'; qty: number; product: 'INTRADAY' | 'DELIVERY'; targetPct: number | null; stoplossPct: number | null; maxStocks: number };
+  orb: OrbSettings;
+}
+/** Opening range breakout: range from 09:15 for N minutes; candle close above → buy CALL, below → buy PUT. */
+export interface OrbSettings {
+  enabled: boolean;
+  underlying: string;
+  rangeMinutes: 5 | 10 | 15 | 30;
+  expiry: 'nearest' | 'next' | 'monthly';
+  lots: number;
+  stoploss: number | null;
+  stoplossUnit: 'POINTS' | 'PCT';
+  /** Target = stop loss × ratio. */
+  targetRatio: number | null;
+  lastEntry: string;
+  exitTime: string;
+  maxEntries: number;
+}
+export interface OrbToday {
+  high: number | null;
+  low: number | null;
+  ready: boolean;
+  skipped: boolean;
+  entries: number;
+  lastSide: 'CE' | 'PE' | null;
+  future: string | null;
 }
 export interface AutomationInfo {
   settings: AutomationSettings;
   today: { pnl: number; halted: boolean };
+  orb?: OrbToday | null;
 }
 
 export const useStrategyAutomation = (id: string | null) =>

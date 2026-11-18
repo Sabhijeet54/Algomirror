@@ -23,6 +23,8 @@ import {
   useStrategyAutomation,
   useStrategyWebhook,
   type AutomationSettings,
+  type OrbSettings,
+  type OrbToday,
   type ScheduleLeg,
   type ScheduleRow,
 } from '@/lib/trading';
@@ -31,6 +33,7 @@ const TABS = [
   { id: 'tv', label: 'TradingView' },
   { id: 'chartink', label: 'Chartink' },
   { id: 'schedule', label: 'Time entry / exit' },
+  { id: 'orb', label: 'ORB' },
   { id: 'trail', label: 'Trailing SL' },
   { id: 'daily', label: 'Daily max loss / profit' },
   { id: 'reentry', label: 'Re-entry' },
@@ -160,6 +163,7 @@ function SettingsTab({ strategyId, tab }: { strategyId: string; tab: Exclude<Tab
   );
 
   if (tab === 'chartink') return <ChartinkCard strategyId={strategyId} form={form} set={set} saveBar={saveBar} />;
+  if (tab === 'orb') return <OrbCard form={form} set={set} saveBar={saveBar} today={q.data?.orb ?? null} />;
 
   if (tab === 'trail') {
     return (
@@ -576,6 +580,128 @@ function ScheduleEditor({
             </Field>
           </div>
         </Section>
+      </CardContent>
+    </Card>
+  );
+}
+
+const ORB_UNDERLYINGS = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'];
+
+function OrbCard({ form, set, saveBar, today }: { form: AutomationSettings; set: SetForm; saveBar: React.ReactNode; today: OrbToday | null }) {
+  const o = form.orb;
+  const setO = (patch: Partial<OrbSettings>) => set((f) => ({ ...f, orb: { ...f.orb, ...patch } }));
+  const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  const rangeEnd = hhmm(9 * 60 + 15 + o.rangeMinutes);
+  const firstClose = hhmm(9 * 60 + 15 + o.rangeMinutes * 2);
+  const target = o.stoploss && o.targetRatio ? Math.round(o.stoploss * o.targetRatio * 100) / 100 : null;
+  const unit = o.stoplossUnit === 'PCT' ? '%' : ' pts';
+
+  return (
+    <Card>
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b px-6 py-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold">Opening range breakout (ORB)</span>
+            <Badge variant={o.enabled ? 'success' : 'secondary'}>{o.enabled ? 'Running' : 'Paused'}</Badge>
+          </div>
+          <p className="mt-0.5 max-w-3xl text-xs text-muted-foreground">
+            Range = {o.underlying}&apos;s high and low from 09:15 to {rangeEnd}. After that, when a {o.rangeMinutes} minute candle closes above the high, the ATM
+            CALL is bought; when one closes below the low, the ATM PUT is bought. Prices are from the nearest {o.underlying} future.
+          </p>
+        </div>
+        <Toggle checked={o.enabled} onChange={(v) => setO({ enabled: v })} label={o.enabled ? 'On' : 'Off'} />
+      </div>
+      <CardContent className="space-y-6 pt-5">
+        {today && o.enabled ? (
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-md border bg-muted/40 px-4 py-3 text-sm">
+            <span className="font-medium">Today</span>
+            {today.skipped ? (
+              <span className="text-amber-600">No ORB today (range start was missed)</span>
+            ) : (
+              <>
+                <span>
+                  High <span className="tabular font-medium">{today.high ?? '—'}</span>
+                </span>
+                <span>
+                  Low <span className="tabular font-medium">{today.low ?? '—'}</span>
+                </span>
+                <span className="text-muted-foreground">{today.ready ? 'Range ready, watching for a breakout' : 'Building the range'}</span>
+                {today.entries ? (
+                  <Badge variant="secondary">
+                    {today.entries} entr{today.entries === 1 ? 'y' : 'ies'}, last {today.lastSide === 'CE' ? 'CALL' : 'PUT'}
+                  </Badge>
+                ) : null}
+              </>
+            )}
+          </div>
+        ) : null}
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Field label="Underlying">
+            <Input list="orb-underlyings" value={o.underlying} onChange={(e) => setO({ underlying: e.target.value.toUpperCase() })} placeholder="NIFTY" />
+            <datalist id="orb-underlyings">
+              {ORB_UNDERLYINGS.map((u) => (
+                <option key={u} value={u} />
+              ))}
+            </datalist>
+          </Field>
+          <Field label="Range / candle" hint={`Range 09:15 to ${rangeEnd}; first breakout candle closes at ${firstClose}`}>
+            <Select value={o.rangeMinutes} onChange={(e) => setO({ rangeMinutes: Number(e.target.value) as OrbSettings['rangeMinutes'] })}>
+              {[5, 10, 15, 30].map((m) => (
+                <option key={m} value={m}>
+                  {m} minutes
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Expiry">
+            <Select value={o.expiry} onChange={(e) => setO({ expiry: e.target.value as OrbSettings['expiry'] })}>
+              <option value="nearest">Nearest</option>
+              <option value="next">Next</option>
+              <option value="monthly">Monthly</option>
+            </Select>
+          </Field>
+          <Field label="Lots">
+            <Input type="number" min={1} value={o.lots} onChange={(e) => setO({ lots: Math.max(1, Number(e.target.value) || 1) })} />
+          </Field>
+        </div>
+
+        <Section title="Stop loss and target" note="On the option premium. Target = stop loss × ratio (ratio 2 → 1:2).">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Stop loss" hint="Empty = none (then no target either; exit at the exit time)">
+              <UnitInput value={o.stoploss} unit={o.stoplossUnit} onValue={(v) => setO({ stoploss: v })} onUnit={(u) => setO({ stoplossUnit: u })} placeholder={o.stoplossUnit === 'PCT' ? 'e.g. 25' : 'e.g. 20'} />
+            </Field>
+            <Field label="Target ratio" hint={target ? `Target = ${target}${unit}` : 'Needs a stop loss'}>
+              <Select value={o.targetRatio ?? ''} onChange={(e) => setO({ targetRatio: numOrNull(e.target.value) })}>
+                <option value="">No target (time exit)</option>
+                {[1, 1.5, 2, 2.5, 3, 4, 5].map((r) => (
+                  <option key={r} value={r}>
+                    1 : {r}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+        </Section>
+
+        <Section title="Timing">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field label="No new entry after (IST)">
+              <Input type="time" value={o.lastEntry} onChange={(e) => setO({ lastEntry: e.target.value })} />
+            </Field>
+            <Field label="Exit time (IST)" hint="ORB positions are squared off">
+              <Input type="time" value={o.exitTime} onChange={(e) => setO({ exitTime: e.target.value })} />
+            </Field>
+            <Field label="Entries per day" hint="2nd entry only on a break of the other side">
+              <Select value={o.maxEntries} onChange={(e) => setO({ maxEntries: Number(e.target.value) })}>
+                <option value={1}>1</option>
+                <option value={2}>2</option>
+                <option value={3}>3</option>
+              </Select>
+            </Field>
+          </div>
+        </Section>
+        {saveBar}
       </CardContent>
     </Card>
   );

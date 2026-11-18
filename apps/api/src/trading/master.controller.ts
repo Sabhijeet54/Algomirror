@@ -34,6 +34,7 @@ import { TradingService } from './trading.service';
 import { MasterOrderService } from './master-order.service';
 import { WebhookService } from './webhook.service';
 import { AutomationService } from './automation.service';
+import { OrbService } from './orb.service';
 import { emailTrialUsed, isTrialLicence, licenceExpiry, licenceHistory, trialUsed } from '../common/licence';
 
 /** Everything a master trader needs: strategies, followers, live account data and trade placement. */
@@ -59,6 +60,7 @@ export class MasterController {
     private readonly orders: MasterOrderService,
     private readonly hooks: WebhookService,
     private readonly automation: AutomationService,
+    private readonly orb: OrbService,
   ) {}
 
   private async own(user: RequestUser, id: string): Promise<Strategy> {
@@ -607,7 +609,7 @@ export class MasterController {
   async automationGet(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     if (user.actorId) throw new ForbiddenException('Only the master can see automation');
     const s = await this.own(user, id);
-    return { settings: this.automation.get(s), today: await this.automation.today(s.id) };
+    return { settings: this.automation.get(s), today: await this.automation.today(s.id), orb: await this.orb.today(s) };
   }
 
   /** Timed entries / exits of all my strategies (each names the strategy it trades in). */
