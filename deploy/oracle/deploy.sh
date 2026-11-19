@@ -7,6 +7,7 @@ set -euo pipefail
 TARGET="${1:?Usage: $0 ubuntu@<vm-ip> <ssh-key-file> <domain>}"
 KEY="${2:?Give the SSH private key file of the VM}"
 DOMAIN="${3:?Give the domain, e.g. cryptocraft.co.in}"
+EXTRA_DOMAINS="${4:-}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
 chmod 600 "$KEY"
@@ -19,4 +20,4 @@ rsync -az --delete -e "${SSH[*]}" \
   "$ROOT/" "$TARGET:ctp/"
 
 echo "→ Setting up / updating on the VM (the first build takes several minutes)"
-"${SSH[@]}" "$TARGET" "sudo bash ctp/deploy/oracle/setup.sh $DOMAIN"
+"${SSH[@]}" "$TARGET" "sudo bash ctp/deploy/oracle/setup.sh $DOMAIN '$EXTRA_DOMAINS'"

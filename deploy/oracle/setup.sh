@@ -3,7 +3,10 @@
 # on this VM with small memory settings, the platform as a systemd service, Caddy for HTTPS. Safe to run again.
 set -euo pipefail
 
-DOMAIN="${1:?Usage: setup.sh <domain>}"
+DOMAIN="${1:?Usage: setup.sh <domain> [extra domains, comma separated]}"
+# More domains serving the same app (e.g. trade.sanchaytechnologies.com); each needs an A record to this VM.
+EXTRA_DOMAINS="$(echo "${2:-}" | tr ',' ' ')"
+EXTRA_ORIGINS="$(for d in $EXTRA_DOMAINS; do printf 'https://%s,' "$d"; done | sed 's/,$//')"
 APP_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 ENV_FILE=/opt/ctp/.env
 export DEBIAN_FRONTEND=noninteractive
@@ -85,6 +88,7 @@ User=ubuntu
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$ENV_FILE
 Environment=API_INTERNAL_URL=http://127.0.0.1:4000
+Environment=EXTRA_WEB_ORIGINS=$EXTRA_ORIGINS
 ExecStart=/bin/sh scripts/start.sh
 Restart=always
 RestartSec=5
@@ -108,6 +112,16 @@ $DOMAIN {
 	}
 }
 CADDY
+for d in $EXTRA_DOMAINS; do
+  cat >> /etc/caddy/Caddyfile <<CADDY
+$d {
+	encode gzip
+	reverse_proxy 127.0.0.1:3000 {
+		flush_interval -1
+	}
+}
+CADDY
+done
 systemctl enable caddy >/dev/null
 systemctl restart caddy
 

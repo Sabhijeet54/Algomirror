@@ -34,6 +34,8 @@ jobs:
     env:
       TARGET: ubuntu@137.23.35.238
       DOMAIN: cryptocraft.co.in
+      # More domains for the same app (A record → this VM), comma separated.
+      EXTRA_DOMAINS: trade.sanchaytechnologies.com
     steps:
       - uses: actions/checkout@v4
       - name: SSH key
@@ -45,7 +47,7 @@ jobs:
           printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle.key
           chmod 600 ~/.ssh/oracle.key
       - name: Deploy
-        run: bash deploy/oracle/deploy.sh "$TARGET" ~/.ssh/oracle.key "$DOMAIN"
+        run: bash deploy/oracle/deploy.sh "$TARGET" ~/.ssh/oracle.key "$DOMAIN" "$EXTRA_DOMAINS"
       - name: Health check
         run: |
           for i in $(seq 1 30); do

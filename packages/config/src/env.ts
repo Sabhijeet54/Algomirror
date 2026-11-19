@@ -79,6 +79,11 @@ export const apiEnvSchema = baseSchema
     // Railway injects PORT; it wins over API_PORT when present.
     PORT: optionalString,
     WEB_ORIGIN: z.string().url().default('http://localhost:3000'),
+    /** More origins serving the same web app (comma separated, e.g. https://trade.example.com). */
+    EXTRA_WEB_ORIGINS: z
+      .string()
+      .optional()
+      .transform((v) => (v ?? '').split(',').map((o) => o.trim().replace(/\/$/, '')).filter(Boolean)),
     API_PUBLIC_URL: z.string().url().default('http://localhost:4000'),
     JWT_SECRET: z
       .string({ required_error: 'JWT_SECRET is required (generate: openssl rand -base64 48)' })

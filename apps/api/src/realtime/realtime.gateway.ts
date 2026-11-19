@@ -39,7 +39,7 @@ export class RealtimeGateway implements OnGatewayConnection {
   async handleConnection(client: Socket): Promise<void> {
     try {
       const origin = client.handshake.headers.origin;
-      if (origin && origin !== this.config.WEB_ORIGIN && this.config.APP_ENV !== 'development') throw new Error('bad origin');
+      if (origin && origin !== this.config.WEB_ORIGIN && !this.config.EXTRA_WEB_ORIGINS.includes(origin) && this.config.APP_ENV !== 'development') throw new Error('bad origin');
       const token = readCookie(client.handshake.headers.cookie, ACCESS_COOKIE);
       if (!token) throw new Error('no token');
       const payload = await this.tokens.verifyAccess(token);

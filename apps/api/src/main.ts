@@ -40,7 +40,7 @@ export function configureApp(app: NestExpressApplication): void {
   app.useBodyParser('text', { limit: '16kb' });
 
   app.enableCors({
-    origin: [config.WEB_ORIGIN],
+    origin: [config.WEB_ORIGIN, ...config.EXTRA_WEB_ORIGINS],
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', CLIENT_HEADER, 'X-Request-Id'],
