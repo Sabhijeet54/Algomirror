@@ -70,7 +70,7 @@ export function StrategyDialog({ open, onOpenChange, strategy }: { open: boolean
       <DialogContent className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{strategy ? 'Edit strategy' : 'New strategy'}</DialogTitle>
-          <DialogDescription>Clients follow a strategy and every trade you place in it is copied to them.</DialogDescription>
+          <DialogDescription>Clients follow a strategy and every trade you place in it is placed for them.</DialogDescription>
         </DialogHeader>
         <form
           className="grid gap-4"
@@ -179,7 +179,7 @@ export function FollowersCard({ strategy }: { strategy: StrategyView }) {
               <TableHead>Client</TableHead>
               <TableHead>Broker</TableHead>
               <TableHead>Allocation</TableHead>
-              <TableHead>Copying</TableHead>
+              <TableHead>Auto-trading</TableHead>
               <TableHead className="text-right">Paper P&amp;L</TableHead>
               <TableHead />
             </TableRow>
@@ -236,7 +236,7 @@ export function FollowersCard({ strategy }: { strategy: StrategyView }) {
                           pending={remove.isPending && remove.variables === f.id}
                           onConfirm={() =>
                             remove.mutate(f.id, {
-                              onSuccess: () => toast.success(`${f.followerName ?? 'Client'} removed — copying stopped`),
+                              onSuccess: () => toast.success(`${f.followerName ?? 'Client'} removed — auto-trading stopped`),
                               onError: (err) => toast.error(err.message),
                             })
                           }
@@ -280,7 +280,7 @@ function TradeDialog({ id, onClose }: { id: string | null; onClose: () => void }
             {(t?.copyOrders ?? []).length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="py-6 text-center text-sm text-muted-foreground">
-                  No clients were copying when this trade happened.
+                  No clients were auto-trading when this trade happened.
                 </TableCell>
               </TableRow>
             ) : (
@@ -312,7 +312,7 @@ export function TradesCard() {
     <Card>
       <CardHeader>
         <CardTitle>Order log</CardTitle>
-        <CardDescription>Every entry and exit (placed here, auto TP/SL, or detected in your broker app) and how it was copied to each client.</CardDescription>
+        <CardDescription>Every entry and exit (placed here, auto TP/SL, or detected in your broker app) and how it was placed for each client.</CardDescription>
       </CardHeader>
       <CardContent className="overflow-x-auto">
         <Table>
@@ -322,7 +322,7 @@ export function TradesCard() {
               <TableHead>Trade</TableHead>
               <TableHead className="text-right">Price</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Copied</TableHead>
+              <TableHead>Placed</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -387,7 +387,7 @@ export function StrategiesCard({
     <Card>
       <CardHeader>
         <CardTitle>Strategies</CardTitle>
-        <CardDescription>Start a strategy to trade it; pause to stop copying to all its clients. Click a row to see its clients.</CardDescription>
+        <CardDescription>Start a strategy to trade it; pause to stop trading for all its clients. Click a row to see its clients.</CardDescription>
       </CardHeader>
       <CardContent className="overflow-x-auto">
         <Table>
@@ -420,7 +420,7 @@ export function StrategiesCard({
                     <StatusBadge value={s.status} />
                   </TableCell>
                   <TableCell>
-                    {s.activeFollowerCount ?? 0} copying / {s.followerCount ?? 0}
+                    {s.activeFollowerCount ?? 0} active / {s.followerCount ?? 0}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{formatINR(s.masterCapital)}</TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>

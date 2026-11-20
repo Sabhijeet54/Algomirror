@@ -267,7 +267,7 @@ export class ClientRegistryService implements OnApplicationBootstrap, OnModuleDe
       // Licence: none assigned = allowed unless LICENCE_REQUIRED; an expired licence always stops copying.
       const lic = r.follower.licenceExpiresAt?.getTime() ?? null;
       if (lic !== null ? lic <= now : this.config.LICENCE_REQUIRED) {
-        skip(lic !== null ? 'Licence expired — renew to resume copy trading' : 'No licence assigned');
+        skip(lic !== null ? 'Licence expired — renew to resume auto-trading' : 'No licence assigned');
         continue;
       }
       if (!a) {

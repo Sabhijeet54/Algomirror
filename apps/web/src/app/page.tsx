@@ -5,15 +5,15 @@ import './landing.css';
 const CHECKS = [
   {
     title: 'Your broker, your account',
-    body: 'Masters keep trading in Angel One as usual. Followers connect their own broker account, and funds never leave it.',
+    body: 'You connect your own broker account. Every order is placed there, and your funds never leave it.',
   },
   {
     title: 'Risk limits on every order',
-    body: 'Allocation, maximum trade value, daily loss and position limits are checked before any follower order is placed.',
+    body: 'Allocation, maximum trade value, daily loss and position limits are checked before any order is placed.',
   },
   {
-    title: 'Driven by real executions',
-    body: 'Client orders are triggered by the master’s actual broker order executions, never by price movements alone.',
+    title: 'Driven by the strategy',
+    body: 'Orders come from the strategy’s own signals and rules, placed automatically at your size.',
   },
   {
     title: 'Paper trading first',
@@ -55,13 +55,13 @@ export default function Home() {
       <main id="main">
         <section className="am-hero" aria-labelledby="hero-title">
           <h1 id="hero-title" className="am-hero__title">
-            <span className="am-hero__left">Their trade.</span>
+            <span className="am-hero__left">Their strategy.</span>
             <span className="am-hero__right">Your account.</span>
           </h1>
           <div className="am-hero__lede">
             <p>
-              Strategy auto-trading for NSE, BSE and F&amp;O. A master trader’s executions are mirrored into your own broker account, at the
-              size and within the limits you choose.
+              Strategy auto-trading for NSE, BSE and F&amp;O. Every signal is placed automatically in your own broker account, at the size
+              and within the limits you choose.
             </p>
             <div className="am-hero__ctas">
               <Cta href="/register">Get started</Cta>
@@ -122,7 +122,7 @@ export default function Home() {
         </div>
         <p className="am-finale__risk">
           Trading in securities and derivatives involves risk of loss. This platform does not provide investment advice and does not claim any
-          regulatory approval. Past performance of a master trader does not guarantee future results.
+          regulatory approval. Past performance of a strategy does not guarantee future results.
         </p>
       </footer>
     </div>

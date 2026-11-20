@@ -157,15 +157,15 @@ function FollowersDialog({ strategy, onClose }: { strategy: { id: string; name: 
       <ReasonDialog
         open={stopId !== null}
         onOpenChange={(o) => !o && setStopId(null)}
-        title="Stop copy trading for this follower?"
+        title="Stop auto-trading for this client?"
         description="No new copy orders will be created for this subscription."
-        confirmLabel="Stop copy trading"
+        confirmLabel="Stop auto-trading"
         pending={stop.isPending}
         onConfirm={(reason) =>
           stopId &&
           stop.mutate(
             { id: stopId, body: { reason } },
-            { onSuccess: () => (toast.success('Copy trading stopped'), setStopId(null)), onError: (e) => toast.error(e.message) },
+            { onSuccess: () => (toast.success('Auto-trading stopped'), setStopId(null)), onError: (e) => toast.error(e.message) },
           )
         }
       />

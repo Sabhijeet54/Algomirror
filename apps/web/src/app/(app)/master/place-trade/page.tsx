@@ -10,7 +10,7 @@ export default function PlaceTradePage() {
   const strategies = useMasterStrategies();
   return (
     <>
-      <PageHeader title="Place trade" description="Every trade you place here is copied to the clients of the selected strategy." />
+      <PageHeader title="Place trade" description="Every trade you place here is placed for the clients of the selected strategy." />
       <PaperModeNotice />
       <div className="grid gap-4">
         <SignalForm strategies={strategies.data ?? []} />

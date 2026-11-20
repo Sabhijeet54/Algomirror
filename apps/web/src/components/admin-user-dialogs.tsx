@@ -186,7 +186,7 @@ export function EditUserDialog({ user, onClose }: { user: AdminUserListItem | nu
           <F id="eu-mobile" label="Mobile">
             <Input id="eu-mobile" inputMode="tel" value={f.mobile} onChange={(e) => setF({ ...f, mobile: e.target.value })} />
           </F>
-          <F id="eu-role" label="User type" hint="Role change is blocked while the user has active strategies / copy trading">
+          <F id="eu-role" label="User type" hint="Role change is blocked while the user has active strategies / auto-trading">
             <Select id="eu-role" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value as RoleValue })}>
               {roles.map((r) => (
                 <option key={r} value={r}>
@@ -300,7 +300,7 @@ export function LicenceDialog({ user, onClose, scope = 'admin' }: { user: (Pick<
               onClick={() => {
                 if (!user) return;
                 if (!confirmRevoke) return setConfirmRevoke(true);
-                revoke.mutate(user.id, { onSuccess: () => (toast.success('Licence revoked — copy trading stopped'), onClose()), onError: (e) => toast.error(e.message) });
+                revoke.mutate(user.id, { onSuccess: () => (toast.success('Licence revoked — auto-trading stopped'), onClose()), onError: (e) => toast.error(e.message) });
               }}
             >
               {confirmRevoke ? 'Yes, revoke now' : 'Revoke'}
@@ -319,7 +319,7 @@ export function LicenceDialog({ user, onClose, scope = 'admin' }: { user: (Pick<
             {licence.isPending ? 'Saving…' : 'Assign licence'}
           </Button>
         </DialogFooter>
-        {confirmRevoke ? <p className="text-xs text-destructive">Revoking ends the licence right now and stops copy trading. Click “Yes, revoke now” to confirm.</p> : null}
+        {confirmRevoke ? <p className="text-xs text-destructive">Revoking ends the licence right now and stops auto-trading. Click “Yes, revoke now” to confirm.</p> : null}
         <div className="grid gap-1.5 border-t pt-3">
           <p className="text-sm font-medium">Licence history</p>
           <LicenceHistoryList rows={history.data} loading={history.isLoading} />
@@ -417,7 +417,7 @@ function StrategyAccessRow({ userId, row, scope = 'admin' }: { userId: string; r
           {row.subscription?.copyStatus !== 'ON' ? (
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" className="size-4" checked={startCopy} onChange={(e) => setStartCopy(e.target.checked)} />
-              Start copying now (only if the client&apos;s broker is connected)
+              Start auto-trading now (only if the client&apos;s broker is connected)
             </label>
           ) : null}
           <div className="flex justify-end gap-2">

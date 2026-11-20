@@ -338,7 +338,7 @@ export class FollowerController {
       else if (!this.trading.isSimulated(a) && a.status !== 'CONNECTED') {
         throw new BadRequestException('Live trading needs your demat connected — log in to your broker, or switch to Paper on the dashboard.');
       }
-      if (a?.mode === 'DATA_ONLY') throw new BadRequestException('A data-only (master) account cannot be used for copy trading.');
+      if (a?.mode === 'DATA_ONLY') throw new BadRequestException('A data-only (master) account cannot be used for auto-trading.');
     }
     const row = await this.prisma.strategyFollower.update({
       where: { id },

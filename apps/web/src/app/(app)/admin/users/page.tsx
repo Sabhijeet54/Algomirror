@@ -206,7 +206,7 @@ export default function AdminUsersPage() {
         open={disableUser !== null}
         onOpenChange={(o) => !o && setDisableUser(null)}
         title={`Make ${disableUser?.name ?? ''} inactive?`}
-        description="The user is logged out everywhere and all of their copy trading stops."
+        description="The user is logged out everywhere and all of their auto-trading stops."
         confirmLabel="Make inactive"
         pending={setStatus.isPending}
         onConfirm={(reason) =>

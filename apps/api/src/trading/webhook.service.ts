@@ -241,7 +241,7 @@ export class WebhookService {
     try {
       const r = await this.orders.place(strategy.masterUserId, strategy, dto, opts);
       const lots = lotSize > 1 ? ` (${quantity / lotSize} lot${quantity / lotSize === 1 ? '' : 's'})` : '';
-      return { symbol: `${exchange}:${symbol}`, message: `${side} ${quantity}${lots} ${exchange}:${symbol} placed and copied${flipped}`, tradeId: r.tradeId };
+      return { symbol: `${exchange}:${symbol}`, message: `${side} ${quantity}${lots} ${exchange}:${symbol} placed for clients${flipped}`, tradeId: r.tradeId };
     } catch (err) {
       if (err instanceof BadRequestException || err instanceof ForbiddenException) throw new AlertError(err.message);
       throw err;

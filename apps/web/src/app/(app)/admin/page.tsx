@@ -49,11 +49,11 @@ export default function AdminOverviewPage() {
           !isFullAdmin ? undefined : <>
             {copyHalt ? (
               <Button variant="outline" onClick={() => setDialog('resume')}>
-                <PlayCircle /> Resume copy trading
+                <PlayCircle /> Resume auto-trading
               </Button>
             ) : (
               <Button variant="outline" onClick={() => setDialog('halt')}>
-                <OctagonX /> Halt copy trading
+                <OctagonX /> Halt auto-trading
               </Button>
             )}
             <Button variant="destructive" onClick={() => setDialog('kill')}>
@@ -75,7 +75,7 @@ export default function AdminOverviewPage() {
         <div className="mb-4 flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-2.5 text-sm text-destructive">
           <TriangleAlert className="mt-0.5 size-4 shrink-0" />
           <span>
-            <strong>Copy trading is halted platform-wide</strong> since {formatDateTime(copyHalt.haltedAt)}. Reason: {copyHalt.reason}
+            <strong>Auto-trading is halted platform-wide</strong> since {formatDateTime(copyHalt.haltedAt)}. Reason: {copyHalt.reason}
           </span>
         </div>
       ) : null}
@@ -103,7 +103,7 @@ export default function AdminOverviewPage() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Connected accounts" value={formatNumber(s?.connectedAccounts)} loading={loading} icon={<Wallet />} />
         <StatCard label="Active masters" value={formatNumber(s?.activeMasters)} loading={loading} icon={<UserCheck />} hint="With an active strategy" />
-        <StatCard label="Active followers" value={formatNumber(s?.activeFollowers)} loading={loading} icon={<Users />} hint="Copy trading ON" />
+        <StatCard label="Active followers" value={formatNumber(s?.activeFollowers)} loading={loading} icon={<Users />} hint="Auto-trading ON" />
         <StatCard label="Active strategies" value={formatNumber(s?.activeStrategies)} loading={loading} icon={<Layers />} />
         <StatCard label="Master trades today" value={formatNumber(s?.todaysMasterTrades)} loading={loading} icon={<BarChart3 />} />
         <StatCard
@@ -154,7 +154,7 @@ export default function AdminOverviewPage() {
         open={dialog === 'kill'}
         onOpenChange={(o) => setDialog(o ? 'kill' : null)}
         title="Activate KILL SWITCH?"
-        description="Halts the copy engine, turns copy trading OFF for every client and exits ALL open positions in every connected client trading account at MARKET."
+        description="Halts the trading engine, turns auto-trading OFF for every client and exits ALL open positions in every connected client trading account at MARKET."
         confirmLabel="Kill switch — exit everything"
         pending={kill.isPending}
         onConfirm={(reason) =>
@@ -172,29 +172,29 @@ export default function AdminOverviewPage() {
       <ReasonDialog
         open={dialog === 'halt'}
         onOpenChange={(o) => setDialog(o ? 'halt' : null)}
-        title="Halt all copy trading?"
+        title="Halt all auto-trading?"
         description="The copy engine will stop creating and submitting follower orders for every strategy until resumed. Existing broker orders are not cancelled."
-        confirmLabel="Halt copy trading"
+        confirmLabel="Halt auto-trading"
         pending={halt.isPending}
         onConfirm={(reason) =>
           halt.mutate(
             { id: '', body: { reason } },
-            { onSuccess: () => (toast.success('Copy trading halted'), setDialog(null)), onError: (e) => toast.error(e.message) },
+            { onSuccess: () => (toast.success('Auto-trading halted'), setDialog(null)), onError: (e) => toast.error(e.message) },
           )
         }
       />
       <ReasonDialog
         open={dialog === 'resume'}
         onOpenChange={(o) => setDialog(o ? 'resume' : null)}
-        title="Resume copy trading?"
-        description="Followers with copy trading ON will start receiving copies of new master trades again."
+        title="Resume auto-trading?"
+        description="Clients with auto-trading ON will start receiving new strategy trades again."
         confirmLabel="Resume"
         destructive={false}
         pending={resume.isPending}
         onConfirm={(reason) =>
           resume.mutate(
             { id: '', body: { reason } },
-            { onSuccess: () => (toast.success('Copy trading resumed'), setDialog(null)), onError: (e) => toast.error(e.message) },
+            { onSuccess: () => (toast.success('Auto-trading resumed'), setDialog(null)), onError: (e) => toast.error(e.message) },
           )
         }
       />

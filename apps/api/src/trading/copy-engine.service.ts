@@ -314,7 +314,7 @@ export class CopyEngineService {
           const calc = computeCopyQuantity(strat, { ...s, maxLots: null, maxQuantity: null, maxTradeValue: null }, x.masterQty, null, x.lotSize).qty;
           qty = Math.min(calc || paperQty, paperQty);
         }
-      } else if (net === 0 || Math.sign(net) === Math.sign(x.signed)) return skip('No open copy position to exit');
+      } else if (net === 0 || Math.sign(net) === Math.sign(x.signed)) return skip('No open position to exit');
       else if (x.fullExit) qty = Math.abs(net);
       else {
         const strat = registry.strategy(x.strategyId) ?? { masterCapital: 0, maxOrderValue: null, maxQuantityPerOrder: null };
@@ -539,7 +539,7 @@ export class CopyEngineService {
           type: 'SIGNAL_MISSED',
           severity: 'WARNING',
           title: `Signal missed: ${label}${r.qty ? ` × ${r.qty}` : ''}`,
-          body: 'Aapka demat connect nahi tha — broker reconnect karein taaki agle signals copy hon.',
+          body: 'Aapka demat connect nahi tha — broker reconnect karein taaki agle signals place ho sakein.',
         });
         continue;
       }

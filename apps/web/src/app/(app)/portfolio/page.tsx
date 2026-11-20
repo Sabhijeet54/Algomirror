@@ -88,7 +88,7 @@ export default function MyStrategiesPage() {
                               size="sm"
                               variant="destructive"
                               disabled={toggle.isPending}
-                              onClick={() => toggle.mutate({ id: s.subscription!.id, action: 'stop' }, { onSuccess: () => toast.success('Copying stopped'), onError: (e) => toast.error(e.message) })}
+                              onClick={() => toggle.mutate({ id: s.subscription!.id, action: 'stop' }, { onSuccess: () => toast.success('Auto-trading stopped'), onError: (e) => toast.error(e.message) })}
                             >
                               Stop
                             </Button>
@@ -96,7 +96,7 @@ export default function MyStrategiesPage() {
                             <Button
                               size="sm"
                               disabled={toggle.isPending || s.status !== 'ACTIVE'}
-                              onClick={() => toggle.mutate({ id: s.subscription!.id, action: 'start' }, { onSuccess: () => toast.success('Copying started'), onError: (e) => toast.error(e.message) })}
+                              onClick={() => toggle.mutate({ id: s.subscription!.id, action: 'start' }, { onSuccess: () => toast.success('Auto-trading started'), onError: (e) => toast.error(e.message) })}
                             >
                               Start
                             </Button>

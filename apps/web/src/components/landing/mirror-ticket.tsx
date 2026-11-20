@@ -35,10 +35,10 @@ export function MirrorTicket() {
 
   const ex = EXAMPLES[i];
   return (
-    <div ref={root} className="am-mirror" aria-label="Example: how one master order is copied to your account">
+    <div ref={root} className="am-mirror" aria-label="Example: how one strategy order is placed in your account">
       <div className="am-ticket am-ticket--master" key={`m${run}`}>
         <p className="am-ticket__head">
-          <span>Master</span>
+          <span>Strategy</span>
           <span>Executed</span>
         </p>
         <p className="am-ticket__side" data-side={ex.side}>

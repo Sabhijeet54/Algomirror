@@ -230,7 +230,7 @@ export class AdminService {
         throw new BadRequestException('Archive this master’s strategies before changing the role');
       }
       if (user.role === 'FOLLOWER' && (await this.prisma.strategyFollower.count({ where: { followerUserId: id, copyStatus: { not: 'OFF' } } }))) {
-        throw new BadRequestException('Stop this client’s copy trading before changing the role');
+        throw new BadRequestException('Stop this client’s auto-trading before changing the role');
       }
     }
     await this.prisma.user.update({ where: { id }, data: { name: dto.name, mobile: dto.mobile, role: dto.role } });
@@ -541,7 +541,7 @@ export class AdminService {
   async stopFollowerCopy(admin: RequestUser, followId: string, reason: string, client: ClientInfo) {
     const follow = await this.prisma.strategyFollower.findUnique({ where: { id: followId } });
     if (!follow) throw new NotFoundException('Subscription not found');
-    if (follow.copyStatus === 'OFF') throw new BadRequestException('Copy trading is already off for this subscription');
+    if (follow.copyStatus === 'OFF') throw new BadRequestException('Auto-trading is already off for this subscription');
     const updated = await this.prisma.$transaction(async (tx) => {
       const f = await tx.strategyFollower.update({
         where: { id: followId },
@@ -582,7 +582,7 @@ export class AdminService {
     await this.redis.set(RedisKeys.copyHalted, JSON.stringify(state));
     await this.prisma.$transaction(async (tx) => {
       await tx.systemEvent.create({
-        data: { source: 'API', type: 'COPY_TRADING_HALTED', severity: 'CRITICAL', message: `Copy trading halted by admin: ${reason}`, context: { adminUserId: admin.id } },
+        data: { source: 'API', type: 'COPY_TRADING_HALTED', severity: 'CRITICAL', message: `Auto-trading halted by admin: ${reason}`, context: { adminUserId: admin.id } },
       });
       await this.audit.logTx(tx, { action: 'ADMIN_STOPPED_COPY', actorUserId: admin.id, targetType: 'Platform', metadata: { scope: 'GLOBAL', reason }, client });
     });
@@ -590,11 +590,11 @@ export class AdminService {
   }
 
   async resumeCopyTrading(admin: RequestUser, reason: string, client: ClientInfo): Promise<{ halted: false }> {
-    if (!(await this.copyHaltState())) throw new BadRequestException('Copy trading is not halted');
+    if (!(await this.copyHaltState())) throw new BadRequestException('Auto-trading is not halted');
     // Record first, then lift the halt: if recording fails the platform stays halted (fail-safe).
     await this.prisma.$transaction(async (tx) => {
       await tx.systemEvent.create({
-        data: { source: 'API', type: 'COPY_TRADING_RESUMED', severity: 'WARNING', message: `Copy trading resumed by admin: ${reason}`, context: { adminUserId: admin.id } },
+        data: { source: 'API', type: 'COPY_TRADING_RESUMED', severity: 'WARNING', message: `Auto-trading resumed by admin: ${reason}`, context: { adminUserId: admin.id } },
       });
       await this.audit.logTx(tx, { action: 'ADMIN_RESUMED_COPY', actorUserId: admin.id, targetType: 'Platform', metadata: { scope: 'GLOBAL', reason }, client });
     });

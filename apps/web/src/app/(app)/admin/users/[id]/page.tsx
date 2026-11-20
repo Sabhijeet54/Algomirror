@@ -131,7 +131,7 @@ export default function AdminUserDetailPage() {
         {u.role !== 'ADMIN' && u.role !== 'SUB_ADMIN' ? (
           <Card className="lg:col-span-2">
             <CardHeader>
-              <CardTitle>{u.role === 'MASTER' ? 'Strategies' : 'Copy trading'}</CardTitle>
+              <CardTitle>{u.role === 'MASTER' ? 'Strategies' : 'Auto-trading'}</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-3">
               {u.role === 'MASTER' ? (
@@ -161,7 +161,7 @@ export default function AdminUserDetailPage() {
                         <StatusBadge value={f.copyStatus} label={`Copy ${f.copyStatus === 'ON' ? 'active' : humanize(f.copyStatus).toLowerCase()}`} />
                         {f.copyStatus !== 'OFF' ? (
                           <Button size="sm" variant="outline" onClick={() => setDialog({ kind: 'stop', id: f.id, strategy: f.strategyName ?? 'strategy' })}>
-                            <StopCircle /> Stop copying
+                            <StopCircle /> Stop auto-trading
                           </Button>
                         ) : null}
                       </div>
@@ -188,7 +188,7 @@ export default function AdminUserDetailPage() {
         open={dialog?.kind === 'disable'}
         onOpenChange={(o) => !o && setDialog(null)}
         title={`Disable ${u.name}?`}
-        description="Signs the user out everywhere, stops all their copy trading and pauses any strategies they run as a master."
+        description="Signs the user out everywhere, stops all their auto-trading and pauses any strategies they run as a master."
         confirmLabel="Disable user"
         pending={setStatus.isPending}
         onConfirm={(reason) => setStatus.mutate({ id: u.id, body: { status: 'DISABLED', reason } }, done('User disabled'))}
@@ -197,7 +197,7 @@ export default function AdminUserDetailPage() {
         open={dialog?.kind === 'enable'}
         onOpenChange={(o) => !o && setDialog(null)}
         title={`Re-enable ${u.name}?`}
-        description="The user can sign in again. Copy trading and strategies stay stopped until they restart them."
+        description="The user can sign in again. Auto-trading and strategies stay stopped until they restart them."
         confirmLabel="Re-enable"
         destructive={false}
         pending={setStatus.isPending}
@@ -207,7 +207,7 @@ export default function AdminUserDetailPage() {
         open={dialog?.kind === 'disconnect'}
         onOpenChange={(o) => !o && setDialog(null)}
         title={`Disconnect ${dialog?.kind === 'disconnect' ? dialog.broker : ''} account?`}
-        description="Deletes the stored broker session and stops copy trading through this account. The user must re-authorise to reconnect."
+        description="Deletes the stored broker session and stops auto-trading through this account. The user must re-authorise to reconnect."
         confirmLabel="Disconnect"
         pending={disconnect.isPending}
         onConfirm={(reason) => dialog?.kind === 'disconnect' && disconnect.mutate({ id: dialog.id, body: { reason } }, done('Broker account disconnected'))}
@@ -215,11 +215,11 @@ export default function AdminUserDetailPage() {
       <ReasonDialog
         open={dialog?.kind === 'stop'}
         onOpenChange={(o) => !o && setDialog(null)}
-        title={`Stop copying ${dialog?.kind === 'stop' ? dialog.strategy : ''}?`}
+        title={`Stop auto-trading ${dialog?.kind === 'stop' ? dialog.strategy : ''}?`}
         description="No new copy orders will be created for this follower on this strategy. Open positions are not closed."
-        confirmLabel="Stop copy trading"
+        confirmLabel="Stop auto-trading"
         pending={stopCopy.isPending}
-        onConfirm={(reason) => dialog?.kind === 'stop' && stopCopy.mutate({ id: dialog.id, body: { reason } }, done('Copy trading stopped'))}
+        onConfirm={(reason) => dialog?.kind === 'stop' && stopCopy.mutate({ id: dialog.id, body: { reason } }, done('Auto-trading stopped'))}
       />
     </>
   );

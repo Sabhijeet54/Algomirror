@@ -113,7 +113,7 @@ export function AssignClientDialog({
           <AllocationFields id="ac" value={alloc} onChange={setAlloc} />
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" className="size-4" checked={startCopy} onChange={(e) => setStartCopy(e.target.checked)} />
-            Start copying now (only if the client&apos;s broker is connected)
+            Start auto-trading now (only if the client&apos;s broker is connected)
           </label>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

@@ -215,7 +215,7 @@ export function SignalForm({ strategies }: { strategies: StrategyView[] }) {
     place.mutate(body, {
       onSuccess: (t) => {
         const ok = t.copyOrders.filter((c) => c.status === 'FILLED' || c.status === 'SUBMITTED').length;
-        toast.success(`${side} ${qty} ${inst.symbol}${exiting ? ' (exit)' : ''} · copied to ${ok}/${t.copyOrders.length} clients`);
+        toast.success(`${side} ${qty} ${inst.symbol}${exiting ? ' (exit)' : ''} · placed for ${ok}/${t.copyOrders.length} clients`);
       },
       onError: (err) => toast.error(err.message),
     });

@@ -121,7 +121,7 @@ const MENUS: Partial<Record<Role, NavSection[]>> = {
         { href: '/admin/strategies', label: 'Strategies', icon: Layers },
         { href: '/admin/signals', label: 'Trade history', icon: Radio },
         { href: '/admin/master-trades', label: 'Master orders', icon: BarChart3 },
-        { href: '/admin/copy-orders', label: 'Client copied orders', icon: ArrowLeftRight },
+        { href: '/admin/copy-orders', label: 'Client orders', icon: ArrowLeftRight },
         { href: '/admin/positions', label: 'Positions', icon: Briefcase },
       ],
     },

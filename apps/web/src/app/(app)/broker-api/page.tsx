@@ -474,7 +474,7 @@ function BrokerForm({ broker }: { broker: BrokerSlug }) {
             <label className="flex items-start gap-2 text-sm">
               <input type="checkbox" className="mt-0.5 size-4" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
               <span>
-                I authorise this platform to store my broker API credentials (encrypted) and to log in and place copy-trading orders in my account through my
+                I authorise this platform to store my broker API credentials (encrypted) and to log in and place automated trading orders in my account through my
                 static IP.
               </span>
             </label>

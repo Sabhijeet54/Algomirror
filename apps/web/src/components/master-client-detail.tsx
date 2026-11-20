@@ -93,7 +93,7 @@ export function ClientDetail({ userId }: { userId: string }) {
             tone={p.licenceStatus === 'EXPIRED' ? 'destructive' : p.licenceStatus === 'NONE' ? 'default' : 'success'}
             hint={p.licenceExpiresAt ? `${formatDateTime(p.licenceAssignedAt)} → ${formatDateTime(p.licenceExpiresAt)}` : undefined}
           />
-          <StatCard label="Strategies copying" value={`${copying} / ${d.strategies.length}`} hint={`Last login ${formatDateTime(p.lastLoginAt)}`} />
+          <StatCard label="Strategies active" value={`${copying} / ${d.strategies.length}`} hint={`Last login ${formatDateTime(p.lastLoginAt)}`} />
         </div>
 
         <Card>
@@ -108,7 +108,7 @@ export function ClientDetail({ userId }: { userId: string }) {
                   <TableHead>Strategy</TableHead>
                   <TableHead>Allocation</TableHead>
                   <TableHead>Max loss / day</TableHead>
-                  <TableHead>Copying</TableHead>
+                  <TableHead>Auto-trading</TableHead>
                   <TableHead className="text-right">Trades today</TableHead>
                   <TableHead className="text-right">Today P&amp;L</TableHead>
                 </TableRow>
@@ -157,8 +157,8 @@ export function ClientDetail({ userId }: { userId: string }) {
           <Card>
             <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
               <div>
-                <CardTitle>Copied trades</CardTitle>
-                <CardDescription>Every order copied (or skipped) for this client from your strategies.</CardDescription>
+                <CardTitle>Client trades</CardTitle>
+                <CardDescription>Every order placed (or skipped) for this client from your strategies.</CardDescription>
               </div>
               <Select className="w-40" value={range} onChange={(e) => setRange(e.target.value as HistoryRange)} aria-label="Period">
                 <option value="today">Today</option>
@@ -168,7 +168,7 @@ export function ClientDetail({ userId }: { userId: string }) {
               </Select>
             </CardHeader>
             <CardContent>
-              <CopyOrdersTable rows={d.orders} empty="No copied trades in this period" />
+              <CopyOrdersTable rows={d.orders} empty="No trades in this period" />
             </CardContent>
           </Card>
         )}

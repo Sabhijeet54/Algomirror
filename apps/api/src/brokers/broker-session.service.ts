@@ -463,7 +463,7 @@ export class BrokerSessionService {
       type: 'BROKER_TOKEN_EXPIRED',
       severity: 'WARNING',
       title: `${brokerTitle(account.broker)} session expired`,
-      body: 'Reconnect your broker to resume copy trading.',
+      body: 'Reconnect your broker to resume auto-trading.',
       data: { brokerAccountId: account.id },
     });
   }

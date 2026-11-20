@@ -109,7 +109,7 @@ export class RiskService implements OnApplicationBootstrap, OnModuleDestroy {
     const account = await this.prisma.brokerAccount.findUnique({ where: { id: accountId } });
     if (account) await this.squareOffAccount(account, { intradayOnly: false }).catch(() => undefined);
     this.realtime.toUser(userId, WsEvent.RISK_LIMIT_HIT, { followerId, pnl, limit });
-    void this.notifier.notify({ userId, type: 'RISK_LIMIT_HIT', severity: 'ERROR', title: 'Loss limit hit — copy trading stopped', body: reason });
+    void this.notifier.notify({ userId, type: 'RISK_LIMIT_HIT', severity: 'ERROR', title: 'Loss limit hit — auto-trading stopped', body: reason });
   }
 
   // ------------------------------------------------------------ auto square-off

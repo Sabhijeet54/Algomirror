@@ -79,7 +79,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       });
     }
     s.on(WsEvent.KILL_SWITCH, (p: { reason: string }) => {
-      toast.error('Kill switch activated — copy trading stopped', { description: p.reason, duration: 20_000 });
+      toast.error('Kill switch activated — auto-trading stopped', { description: p.reason, duration: 20_000 });
       refreshBrokers();
     });
     s.on(WsEvent.MARKET_FEED_STATUS, (st: MarketFeedStatus) => qc.setQueryData(['trading', 'feed-status'], st));

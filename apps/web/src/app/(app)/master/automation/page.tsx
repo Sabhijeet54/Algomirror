@@ -55,7 +55,7 @@ export default function AutomationPage() {
     <>
       <PageHeader
         title="Automation"
-        description="Trades placed automatically in a strategy and copied to every client — alerts, timed entry / exit and risk rules."
+        description="Trades placed automatically in a strategy for every client — alerts, timed entry / exit and risk rules."
       />
       {strategies.isLoading ? null : !sel ? (
         <Card>

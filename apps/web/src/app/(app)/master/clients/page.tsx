@@ -181,13 +181,13 @@ function DeleteClientDialog({ client, onClose }: { client: MasterClientRow | nul
           <DialogDescription>{client?.email}</DialogDescription>
         </DialogHeader>
         <ul className="list-disc space-y-1 pl-5 text-sm">
-          <li>Removed from all your strategies — copy trading stops.</li>
+          <li>Removed from all your strategies — auto-trading stops.</li>
           <li>Logged out and can no longer log in. The email can be used again for a new client.</li>
           <li>Broker disconnected and saved broker API keys deleted.</li>
           <li>Past trades stay in your trade history.</li>
         </ul>
         <p className="rounded-md bg-destructive/10 p-2 text-sm text-destructive">
-          Open positions in the client&apos;s broker are <strong>not</strong> closed — exit them first.{copying ? ' This client is copying right now.' : ''} This cannot be undone.
+          Open positions in the client&apos;s broker are <strong>not</strong> closed — exit them first.{copying ? ' This client is auto-trading right now.' : ''} This cannot be undone.
         </p>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={del.isPending}>

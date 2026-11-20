@@ -109,7 +109,7 @@ export default function AdminBrokersPage() {
         open={target !== null}
         onOpenChange={(o) => !o && setTarget(null)}
         title={`Force disconnect ${target?.label ?? ''}?`}
-        description="Logs out the broker session, deletes the stored token, stops copy trading through this account and notifies the user."
+        description="Logs out the broker session, deletes the stored token, stops auto-trading through this account and notifies the user."
         confirmLabel="Force Disconnect"
         pending={disconnect.isPending}
         onConfirm={(reason) =>
