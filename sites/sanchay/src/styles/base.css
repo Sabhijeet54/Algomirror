@@ -238,6 +238,7 @@ a:hover > .logo .logo__mark path { transform: translateX(2px); }
 .contact__form { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: clamp(20px, 3vw, 40px); }
 
 .form { display: grid; gap: 22px; }
+.form[hidden] { display: none; }
 fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 legend { padding: 0; margin-bottom: 10px; font-weight: 700; }
 legend span { font-weight: 400; color: var(--muted); font-size: var(--t-small); margin-left: 6px; }
