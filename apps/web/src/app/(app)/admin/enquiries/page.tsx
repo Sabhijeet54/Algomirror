@@ -26,10 +26,12 @@ type Kind = 'CLIENT' | 'PARTNER';
 type Status = EnquiryView['status'];
 
 const LABELS: Record<string, string> = {
-  COPY_TRADING: 'Copy trading',
+  TRADING_PLAN: 'Automated trading plan',
+  MULTI_ACCOUNT: 'Multi-account execution',
+  COPY_TRADING: 'Trading account',
   ALGO_AUTOMATION: 'Algo automation',
   TRADINGVIEW_AUTOMATION: 'TradingView automation',
-  STRATEGY_SUBSCRIPTION: 'Strategy subscription',
+  STRATEGY_SUBSCRIPTION: 'Strategy plans and pricing',
   DEMO: 'Free demo',
   OTHER: 'Other',
   WHITE_LABEL: 'White label solution',
@@ -56,7 +58,7 @@ const LABELS: Record<string, string> = {
 const label = (v: string | undefined | null) => (v ? (LABELS[v] ?? v) : '');
 
 const INTERESTS: Record<Kind, string[]> = {
-  CLIENT: ['COPY_TRADING', 'ALGO_AUTOMATION', 'TRADINGVIEW_AUTOMATION', 'STRATEGY_SUBSCRIPTION', 'DEMO', 'OTHER'],
+  CLIENT: ['TRADING_PLAN', 'ALGO_AUTOMATION', 'TRADINGVIEW_AUTOMATION', 'STRATEGY_SUBSCRIPTION', 'DEMO', 'OTHER'],
   PARTNER: ['WHITE_LABEL', 'CUSTOM_DEVELOPMENT'],
 };
 const STATUS_TONE: Record<Status, 'warning' | 'default' | 'secondary'> = { NEW: 'warning', CONTACTED: 'default', CLOSED: 'secondary' };

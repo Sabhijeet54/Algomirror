@@ -20,5 +20,12 @@ rsync -az --delete -e "${SSH[*]}" \
   --exclude 'Claude outputs' --exclude '*.tsbuildinfo' \
   "$ROOT/" "$TARGET:ctp/"
 
+if [ -n "${SMTP_PASSWORD:-}" ]; then
+  echo "→ Mail settings (sent over SSH stdin, merged into the VM's .env by setup.sh)"
+  printf 'SMTP_HOST=%s\nSMTP_PORT=%s\nSMTP_USER=%s\nSMTP_PASSWORD=%s\nMAIL_FROM="%s"\nENQUIRY_NOTIFY_EMAIL=%s\n' \
+    "${SMTP_HOST:?}" "${SMTP_PORT:-465}" "${SMTP_USER:?}" "$SMTP_PASSWORD" "${MAIL_FROM:?}" "${ENQUIRY_NOTIFY_EMAIL:-}" |
+    "${SSH[@]}" "$TARGET" 'umask 077; cat > ctp-mail.env'
+fi
+
 echo "→ Setting up / updating on the VM (the first build takes several minutes)"
 "${SSH[@]}" "$TARGET" "sudo bash ctp/deploy/oracle/setup.sh $DOMAIN '$EXTRA_DOMAINS' '$SITE_ORIGINS'"

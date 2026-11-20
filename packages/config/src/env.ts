@@ -102,6 +102,8 @@ export const apiEnvSchema = baseSchema
     SMTP_PORT: intFromString(587),
     SMTP_USER: optionalString,
     SMTP_PASSWORD: optionalString,
+    /** Gets an email for every new website enquiry (e.g. info@sanchaytechnologies.com). */
+    ENQUIRY_NOTIFY_EMAIL: optionalString,
     MAIL_FROM: z.string().default('Copy Trading Platform <no-reply@example.com>'),
     /** How often master broker order books are polled for trades placed outside the platform. 0 disables polling. */
     COPY_POLL_INTERVAL_MS: intFromString(5000, 0),

@@ -41,6 +41,10 @@ export function initForm(form: HTMLFormElement) {
     const sel = form.querySelector<HTMLSelectElement>('[data-interest-client]');
     if (sel && Array.from(sel.options).some((o) => o.value === interest)) sel.value = interest;
   }
+  const PLANS: Record<string, string> = { MONTHLY: 'Monthly (₹24,999)', QUARTERLY: 'Quarterly (₹64,999)', HALF_YEARLY: 'Half-yearly (₹1,09,999)', YEARLY: 'Yearly (₹1,51,000)' };
+  const plan = PLANS[(q.get('plan') ?? '').toUpperCase()];
+  const msg = form.querySelector<HTMLTextAreaElement>('textarea[name="message"]');
+  if (plan && msg && !msg.value) msg.value = `I would like the ${plan} plan.`;
   const mods = new Set((q.get('modules') ?? '').toUpperCase().split(',').filter(Boolean));
   form.querySelectorAll<HTMLInputElement>('input[name="modules"]').forEach((c) => (c.checked = mods.has(c.value)));
 

@@ -1,18 +1,18 @@
 /** Website enquiry form: validation, client vs partner answers, bot trap. */
-import { EnquiryError, parseEnquiry } from '../../src/enquiries/enquiry';
+import { EnquiryError, enquiryMail, parseEnquiry } from '../../src/enquiries/enquiry';
 
 const base = { name: 'Ravi Kumar', email: 'Ravi@Example.com', phone: '+91 98765 43210' };
 
 describe('parseEnquiry', () => {
   it('accepts a client enquiry and cleans the fields', () => {
-    expect(parseEnquiry({ ...base, kind: 'client', interest: 'copy_trading', city: '  Jaipur ', message: 'Line one\r\n\r\n\r\nLine two' })).toEqual({
+    expect(parseEnquiry({ ...base, kind: 'client', interest: 'trading_plan', city: '  Jaipur ', message: 'Line one\r\n\r\n\r\nLine two' })).toEqual({
       kind: 'CLIENT',
       name: 'Ravi Kumar',
       email: 'ravi@example.com',
       phone: '+919876543210',
       company: null,
       city: 'Jaipur',
-      interest: 'COPY_TRADING',
+      interest: 'TRADING_PLAN',
       details: null,
       message: 'Line one\n\nLine two',
       page: null,
@@ -42,5 +42,20 @@ describe('parseEnquiry', () => {
 
   it('returns null for a bot that filled the hidden field', () => {
     expect(parseEnquiry({ ...base, kind: 'CLIENT', interest: 'DEMO', website: 'http://spam' })).toBeNull();
+  });
+});
+
+describe('enquiryMail', () => {
+  it('summarises a partner request for the owner', () => {
+    const e = parseEnquiry({ ...base, kind: 'PARTNER', company: 'Demo Broking', interest: 'CUSTOM_DEVELOPMENT', partnerType: 'BROKER', modules: ['MOBILE_APP'], message: 'Need an app' })!;
+    const m = enquiryMail(e, new Date('2026-11-20T06:30:00Z'), 'https://trade.example.com/admin/enquiries');
+    expect(m.subject).toBe('Partner request: Ravi Kumar (Demo Broking) · Custom development');
+    expect(m.text).toContain('Phone: +919876543210');
+    expect(m.text).toContain('Business type: Broker');
+    expect(m.text).toContain('Needs: Mobile app');
+    expect(m.text).toContain('Received: 20 Nov 2026, 12:00 pm IST');
+    expect(m.text).toContain('Message:\nNeed an app');
+    expect(m.text).toContain('https://trade.example.com/admin/enquiries');
+    expect(m.text).not.toContain('City:');
   });
 });

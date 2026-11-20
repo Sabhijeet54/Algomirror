@@ -1,28 +1,7 @@
 @font-face {
-  font-family: 'Supreme';
-  src: url('/fonts/supreme-400-normal.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Supreme';
-  src: url('/fonts/supreme-500-normal.woff2') format('woff2');
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Supreme';
-  src: url('/fonts/supreme-700-normal.woff2') format('woff2');
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Supreme';
-  src: url('/fonts/supreme-800-normal.woff2') format('woff2');
-  font-weight: 800;
+  font-family: 'Archivo';
+  src: url('/fonts/archivo-100_900-normal.woff2') format('woff2');
+  font-weight: 100 900;
   font-style: normal;
   font-display: swap;
 }
@@ -42,20 +21,23 @@
 }
 
 :root {
-  --ground: #eef0f2;
-  --ground-2: #e3e7eb;
-  --ink: #0b1620;
-  --muted: #4e5d6b;
-  --line: rgba(11, 22, 32, 0.14);
-  --accent: #1f4bff;
+  /* Lavender ground, deep ink, violet accent. */
+  --ground: #f6f5fb;
+  --ground-2: #ece9f6;
+  --ink: #1d1b2c;
+  --muted: #5b5872;
+  --line: rgba(29, 27, 44, 0.13);
+  --accent: #6425fe;
   --accent-ink: #ffffff;
-  --night: #0b1620;
-  --night-ink: #e8edf2;
-  --night-muted: #9aa8b6;
-  --night-line: rgba(232, 237, 242, 0.16);
+  --accent-soft: #ede7ff;
+  --accent-light: #b9a3ff;
+  --night: #0f0e17;
+  --night-ink: #ecebf3;
+  --night-muted: #a3a0b8;
+  --night-line: rgba(236, 235, 243, 0.15);
   --ok: #0e7a4f;
 
-  --font: 'Supreme', ui-sans-serif, system-ui, sans-serif;
+  --font: 'Archivo', ui-sans-serif, system-ui, sans-serif;
   --mono: 'Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
 
   --ease: cubic-bezier(0.2, 0.7, 0.1, 1);

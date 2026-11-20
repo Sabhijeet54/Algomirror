@@ -23,7 +23,9 @@ document.addEventListener('keydown', (e) => {
 /* ---------------- header: solid once the page moves ---------------- */
 const top = document.querySelector('[data-top]');
 if (top) {
-  ScrollTrigger.create({ start: 8, end: 'max', onToggle: (self) => top.classList.toggle('is-stuck', self.isActive) });
+  const stick = () => top.classList.toggle('is-stuck', window.scrollY > 8);
+  ScrollTrigger.create({ start: 0, end: 'max', onUpdate: stick, onRefresh: stick });
+  stick();
 }
 
 /* ---------------- hero intro + reveals ---------------- */

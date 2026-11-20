@@ -49,6 +49,15 @@ jobs:
           printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle.key
           chmod 600 ~/.ssh/oracle.key
       - name: Deploy
+        env:
+          # New website enquiries are emailed here. Mail goes out through the Hostinger mailbox; its password is the
+          # SMTP_PASSWORD repository secret (without it the deploy still works, the email is just skipped).
+          ENQUIRY_NOTIFY_EMAIL: info@sanchaytechnologies.com
+          SMTP_HOST: smtp.hostinger.com
+          SMTP_PORT: '465'
+          SMTP_USER: info@sanchaytechnologies.com
+          MAIL_FROM: Sanchay Technologies <info@sanchaytechnologies.com>
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
         run: bash deploy/oracle/deploy.sh "$TARGET" ~/.ssh/oracle.key "$DOMAIN" "$EXTRA_DOMAINS" "$SITE_ORIGINS"
       - name: Health check
         run: |

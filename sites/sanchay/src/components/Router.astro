@@ -34,9 +34,9 @@ const H = top * 2 + step * (accounts.length - 1);
     </g>
     <g class="router__signal">
       <rect x="16" y={sy - 46} width={sx - 16} height="92" rx="6"></rect>
-      <text x="32" y={sy - 18} class="router__k">SIGNAL</text>
-      <text x="32" y={sy + 8} class="router__v">BUY NIFTY CE</text>
-      <text x="32" y={sy + 30} class="router__k">1 lot · master</text>
+      <text x="28" y={sy - 18} class="router__k">SIGNAL</text>
+      <text x="28" y={sy + 8} class="router__v">BUY NIFTY CE</text>
+      <text x="28" y={sy + 30} class="router__k">strategy · 1 lot</text>
       <circle cx={sx} cy={sy} r="5" class="router__dot"></circle>
     </g>
     <g class="router__rows">
@@ -66,7 +66,7 @@ const H = top * 2 + step * (accounts.length - 1);
     <g class="router__packets" data-packets></g>
   </svg>
   <figcaption>
-    <span class="sr-only">Illustration: one buy signal is copied to eight client accounts on different brokers, each at its own lot size, and every order shows as filled.</span>
+    <span class="sr-only">Illustration: one buy signal from a strategy is placed in eight client accounts on different brokers, each at its own lot size, and every order shows as filled.</span>
     <span aria-hidden="true">Illustration. Not live data.</span>
   </figcaption>
 </figure>

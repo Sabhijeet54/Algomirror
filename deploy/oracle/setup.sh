@@ -73,6 +73,18 @@ ENV
   echo "  Created with new secrets and an empty database."
 fi
 chmod 600 "$ENV_FILE"
+# Mail settings handed over by deploy.sh: replace the same keys in the .env, then remove the hand-over file.
+MAIL_ENV="$(getent passwd ubuntu | cut -d: -f6)/ctp-mail.env"
+if [ -f "$MAIL_ENV" ]; then
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    key="${line%%=*}"
+    sed -i "/^${key}=/d" "$ENV_FILE"
+    printf '%s\n' "$line" >> "$ENV_FILE"
+  done < "$MAIL_ENV"
+  rm -f "$MAIL_ENV"
+  echo "  Mail settings updated."
+fi
 
 echo "→ Building the platform (slow on 1 GB, about 10-20 minutes the first time)"
 chown -R ubuntu:ubuntu "$APP_DIR"

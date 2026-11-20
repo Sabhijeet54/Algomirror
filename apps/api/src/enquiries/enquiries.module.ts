@@ -10,7 +10,9 @@ import { clientInfo } from '../common/client-info';
 import { AdminOnly, Public, Roles } from '../common/decorators/auth.decorators';
 import { PaginationQueryDto } from '../common/dto/pagination.dto';
 import { PRISMA } from '../common/prisma/prisma.service';
-import { EnquiryError, parseEnquiry } from './enquiry';
+import { API_CONFIG, type ApiConfig } from '../config/config.module';
+import { MailService } from '../notifications/mail.service';
+import { EnquiryError, enquiryMail, parseEnquiry } from './enquiry';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
@@ -51,7 +53,11 @@ const toView = (e: Enquiry): EnquiryView => ({
 export class EnquiriesService {
   private readonly logger = new Logger('Enquiries');
 
-  constructor(@Inject(PRISMA) private readonly prisma: PrismaClient) {}
+  constructor(
+    @Inject(PRISMA) private readonly prisma: PrismaClient,
+    @Inject(API_CONFIG) private readonly config: ApiConfig,
+    private readonly mail: MailService,
+  ) {}
 
   async create(body: unknown, req: Request): Promise<{ ok: true }> {
     let input;
@@ -63,10 +69,16 @@ export class EnquiriesService {
     }
     if (!input) return { ok: true }; // bot (honeypot filled): pretend it worked
     const { ip, userAgent } = clientInfo(req);
-    await this.prisma.enquiry.create({
+    const saved = await this.prisma.enquiry.create({
       data: { ...input, details: input.details ?? Prisma.JsonNull, ip, userAgent: userAgent?.slice(0, 300) ?? null },
     });
     this.logger.log(`New ${input.kind.toLowerCase()} enquiry (${input.interest}) from ${input.name}`);
+    // Email the owner in the background: a mail problem never fails the visitor's form.
+    const to = this.config.ENQUIRY_NOTIFY_EMAIL;
+    if (to) {
+      const link = `${this.config.WEB_ORIGIN.replace(/\/$/, '')}/admin/enquiries`;
+      void this.mail.send({ to, replyTo: input.email, ...enquiryMail(input, saved.createdAt, link) }).catch((err: Error) => this.logger.warn(`Enquiry email failed: ${err.message}`));
+    }
     return { ok: true };
   }
 

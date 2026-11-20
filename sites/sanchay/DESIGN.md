@@ -1,8 +1,8 @@
 # Sanchay Technologies: design notes
 
 ## Brief
-- Subject: Sanchay Technologies, an Indian software company that builds copy trading and trading
-  automation platforms (the product runs at trade.sanchaytechnologies.com).
+- Subject: Sanchay Technologies, an Indian software company that builds automated trading
+  platforms (the product runs at trade.sanchaytechnologies.com).
 - Audience: B2B buyers. Brokers and authorised persons, advisors, trader-educators who run client
   groups, small desks. Also individual clients who want an account.
 - Job: get enquiries (client or partner), send existing users to Log in / Sign up.

@@ -12,7 +12,7 @@ interface Props {
   noindex?: boolean;
 }
 const { title, description = site.description, current, noindex = false } = Astro.props;
-const fullTitle = title ? `${title} | ${site.name}` : `${site.name} | Copy trading and automation software`;
+const fullTitle = title ? `${title} | ${site.name}` : `${site.name} | Automated trading software`;
 const canonical = new URL(Astro.url.pathname, site.url).href;
 const ogImage = new URL('/og.png', site.url).href;
 const jsonLd = {
@@ -20,7 +20,7 @@ const jsonLd = {
   '@type': 'Organization',
   name: site.name,
   url: site.url,
-  logo: new URL('/favicon.svg', site.url).href,
+  logo: new URL('/brand/logo.png', site.url).href,
   description: site.description,
   email: site.email,
   contactPoint: { '@type': 'ContactPoint', contactType: 'customer support', email: site.email, areaServed: 'IN' },
@@ -36,8 +36,9 @@ const year = new Date().getFullYear();
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
     {noindex && <meta name="robots" content="noindex" />}
-    <meta name="theme-color" content="#eef0f2" />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="theme-color" content="#f6f5fb" />
+    <link rel="icon" href="/favicon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="sitemap" href="/sitemap-index.xml" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content={site.name} />
@@ -46,8 +47,7 @@ const year = new Date().getFullYear();
     <meta property="og:url" content={canonical} />
     <meta property="og:image" content={ogImage} />
     <meta name="twitter:card" content="summary_large_image" />
-    <link rel="preload" href="/fonts/supreme-800-normal.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="/fonts/supreme-400-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/archivo-100_900-normal.woff2" as="font" type="font/woff2" crossorigin />
     <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
     <script is:inline>
       document.documentElement.classList.add('js');
@@ -59,7 +59,7 @@ const year = new Date().getFullYear();
     <header class="top" data-top>
       <div class="top__in">
         <a href="/" class="top__home" aria-label={`${site.name} home`}>
-          <Logo />
+          <Logo height={46} />
         </a>
         <nav class="top__nav" aria-label="Main">
           <ul>
@@ -122,8 +122,8 @@ const year = new Date().getFullYear();
       </div>
       <div class="foot__grid wrap">
         <div class="foot__brand">
-          <Logo size={36} />
-          <p>Copy trading and trading automation software for brokers, advisors and trading desks in India.</p>
+          <Logo height={44} light />
+          <p>Automated trading software for traders, brokers and trading desks in India.</p>
           <p class="foot__mail"><a href={`mailto:${site.email}`}>{site.email}</a></p>
         </div>
         <nav aria-label="Company" class="foot__col">
@@ -161,9 +161,9 @@ const year = new Date().getFullYear();
           Sanchay Technologies provides software only. We do not give investment advice, recommend securities or manage
           money. Trading in securities and derivatives involves risk of loss. <a href="/disclaimer/">Read the risk disclaimer</a>.
         </p>
-        <p class="foot__copy">© {year} {site.name}</p>
+        <p class="foot__legal">© {year} {site.name}</p>
       </div>
-      <svg class="foot__word" viewBox="0 0 1000 230" aria-hidden="true" focusable="false"><text x="500" y="215" text-anchor="middle">Sanchay</text></svg>
+      <svg class="foot__word" viewBox="0 0 1000 230" aria-hidden="true" focusable="false"><text x="10" y="215" textLength="980" lengthAdjust="spacingAndGlyphs">Sanchay</text></svg>
     </footer>
 
     <script>

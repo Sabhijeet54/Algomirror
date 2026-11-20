@@ -3,13 +3,13 @@
  * development). Pure parsing and validation, so the rules are unit tested without HTTP.
  */
 
-export const CLIENT_INTERESTS = ['COPY_TRADING', 'ALGO_AUTOMATION', 'TRADINGVIEW_AUTOMATION', 'STRATEGY_SUBSCRIPTION', 'DEMO', 'OTHER'] as const;
+export const CLIENT_INTERESTS = ['TRADING_PLAN', 'ALGO_AUTOMATION', 'TRADINGVIEW_AUTOMATION', 'STRATEGY_SUBSCRIPTION', 'DEMO', 'OTHER'] as const;
 export const PARTNER_INTERESTS = ['WHITE_LABEL', 'CUSTOM_DEVELOPMENT'] as const;
 export const PARTNER_TYPES = ['BROKER', 'SUB_BROKER_AP', 'ADVISOR_RA', 'FINTECH', 'TRADER_EDUCATOR', 'OTHER'] as const;
 export const CLIENT_SIZES = ['UNDER_50', '50_500', '500_5000', 'OVER_5000'] as const;
 /** What a custom build can include (the partner ticks any). */
 export const CUSTOM_MODULES = [
-  'COPY_TRADING',
+  'MULTI_ACCOUNT',
   'ALGO_STRATEGY',
   'TRADINGVIEW_WEBHOOK',
   'OPTION_CHAIN_TOOLS',
@@ -110,5 +110,62 @@ export function parseEnquiry(raw: unknown): EnquiryInput | null {
     details,
     message: multiline(b.message, 2000),
     page: text(b.page, 200),
+  };
+}
+
+const LABEL: Record<string, string> = {
+  TRADING_PLAN: 'Automated trading plan',
+  MULTI_ACCOUNT: 'Multi-account execution',
+  ALGO_AUTOMATION: 'Algo automation',
+  TRADINGVIEW_AUTOMATION: 'TradingView automation',
+  STRATEGY_SUBSCRIPTION: 'Strategy plans and pricing',
+  DEMO: 'Free demo',
+  OTHER: 'Other',
+  WHITE_LABEL: 'White label solution',
+  CUSTOM_DEVELOPMENT: 'Custom development',
+  BROKER: 'Broker',
+  SUB_BROKER_AP: 'Sub-broker / AP',
+  ADVISOR_RA: 'Advisor / RA',
+  FINTECH: 'Fintech',
+  TRADER_EDUCATOR: 'Trader / educator',
+  UNDER_50: 'Under 50 clients',
+  '50_500': '50 to 500 clients',
+  '500_5000': '500 to 5,000 clients',
+  OVER_5000: '5,000+ clients',
+  ALGO_STRATEGY: 'Algo strategies',
+  TRADINGVIEW_WEBHOOK: 'TradingView / alert automation',
+  OPTION_CHAIN_TOOLS: 'Option chain tools',
+  BACKTESTING: 'Backtesting',
+  BROKER_INTEGRATION: 'Broker integration',
+  MOBILE_APP: 'Mobile app',
+  ADMIN_CRM: 'Admin / CRM',
+  PAYMENTS_BILLING: 'Payments and billing',
+  RISK_MANAGEMENT: 'Risk management',
+};
+const label = (v: string | undefined) => (v ? (LABEL[v] ?? v) : '');
+
+/** The owner's notification email for a new enquiry (plain text; reply goes to the visitor). */
+export function enquiryMail(e: EnquiryInput, at: Date, adminLink: string): { subject: string; text: string } {
+  const what = e.kind === 'PARTNER' ? 'Partner request' : 'Client enquiry';
+  const when = at.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+  const rows: [string, string | null | undefined][] = [
+    ['Name', e.name],
+    ['Email', e.email],
+    ['Phone', e.phone],
+    ['Company', e.company],
+    ['City', e.city],
+    [e.kind === 'PARTNER' ? 'Partnership' : 'Looking for', label(e.interest)],
+    ['Business type', label(e.details?.partnerType)],
+    ['Client base', label(e.details?.clients)],
+    ['Needs', e.details?.modules?.map(label).join(', ')],
+    ['Received', `${when} IST`],
+  ];
+  const body = rows
+    .filter(([, v]) => v)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join('\n');
+  return {
+    subject: `${what}: ${e.name}${e.company ? ` (${e.company})` : ''} · ${label(e.interest)}`,
+    text: `New ${what.toLowerCase()} from sanchaytechnologies.com\n\n${body}${e.message ? `\n\nMessage:\n${e.message}` : ''}\n\nReply to this email to answer ${e.name} directly.\nAll enquiries: ${adminLink}\n`,
   };
 }

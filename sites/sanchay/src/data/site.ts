@@ -8,7 +8,7 @@ export const site = {
   url: 'https://sanchaytechnologies.com',
   email: 'info@sanchaytechnologies.com',
   description:
-    'Sanchay Technologies builds copy trading and trading automation software for brokers, advisors and trading desks in India: white label platforms and custom builds.',
+    'Sanchay Technologies builds automated trading software for traders, brokers and trading desks in India: ready plans, white label platforms and custom builds.',
   app: APP,
   login: `${APP}/login`,
   signup: `${APP}/register`,
@@ -32,9 +32,9 @@ export const brokers = ['Zerodha', 'Angel One', 'Upstox', 'Dhan', 'Fyers', 'Kota
 
 export const products = [
   {
-    code: 'CPY',
-    name: 'Copy trading engine',
-    text: 'A master places a trade once. Every linked client account gets the same order, sized by its own multiplier or capital share, through its own broker.',
+    code: 'EXE',
+    name: 'Execution engine',
+    text: 'One strategy signal is placed in every linked account through that account’s own broker, at its own lot size, in a fraction of a second.',
   },
   {
     code: 'AUT',
@@ -44,7 +44,7 @@ export const products = [
   {
     code: 'RSK',
     name: 'Risk controls',
-    text: 'Daily loss and profit limits, maximum trade value and position limits per client, automatic square off, and one kill switch that stops copying and exits open positions.',
+    text: 'Daily loss and profit limits, maximum trade value and position limits per client, automatic square off, and one kill switch that stops trading and exits open positions.',
   },
   {
     code: 'ADM',
@@ -60,16 +60,16 @@ export const products = [
 
 export const steps = [
   { title: 'Connect', text: 'Each client links their own broker account. Money never leaves it.' },
-  { title: 'Set the rule', text: 'Pick who leads: a master trader, or an automated strategy.' },
-  { title: 'Every account follows', text: 'The order goes to every linked account at its own size and limits.' },
+  { title: 'Pick a strategy', text: 'Choose the automated strategy that should trade, and the size for each account.' },
+  { title: 'It runs by itself', text: 'Entries and exits are placed in every linked account, inside its own limits.' },
   { title: 'Watch and stop', text: 'Live positions and logs for every account, and one switch to stop all of it.' },
 ];
 
 export const audiences = [
   { name: 'Brokers and authorised persons', text: 'Offer automation to active clients without building it in house.' },
-  { name: 'Advisors and research analysts', text: 'Let clients act on your calls the moment you make them.' },
-  { name: 'Trader educators', text: 'Run your group’s trades in members’ own accounts, at sizes they choose.' },
-  { name: 'Trading desks', text: 'Mirror one book across many accounts with limits per account.' },
+  { name: 'Advisors and research analysts', text: 'Give clients disciplined, automated execution inside limits they set.' },
+  { name: 'Trader educators', text: 'Give members a tested system that runs in their own accounts.' },
+  { name: 'Trading desks', text: 'Run one strategy across many accounts with limits per account.' },
 ];
 
 export const faqs = [
@@ -95,7 +95,7 @@ export const faqs = [
   },
   {
     q: 'Can a client stop at any time?',
-    a: 'Yes. A client can pause copying from their own dashboard, and an admin can stop everything at once with the kill switch.',
+    a: 'Yes. A client can pause automation from their own dashboard, and an admin can stop everything at once with the kill switch.',
   },
 ];
 
@@ -106,7 +106,7 @@ export const partnerOptions = {
     name: 'White label solution',
     status: 'Ready now',
     text: 'Our running platform under your brand. Your clients see your name, your logo and your domain. You get the admin panel, licences and support.',
-    points: ['Your brand, logo and domain', 'Admin panel and client licences', 'Copy trading, automation and risk controls included', 'Setup, training and ongoing support'],
+    points: ['Your brand, logo and domain', 'Admin panel and client licences', 'Automated execution, strategies and risk controls included', 'Setup, training and ongoing support'],
   },
   custom: {
     id: 'CUSTOM_DEVELOPMENT',
@@ -118,7 +118,7 @@ export const partnerOptions = {
 
 /** What a custom build can include (values match the API). */
 export const customModules = [
-  { id: 'COPY_TRADING', label: 'Copy trading' },
+  { id: 'MULTI_ACCOUNT', label: 'Multi-account execution' },
   { id: 'ALGO_STRATEGY', label: 'Your own algo strategies' },
   { id: 'TRADINGVIEW_WEBHOOK', label: 'TradingView / alert automation' },
   { id: 'OPTION_CHAIN_TOOLS', label: 'Option chain tools' },
@@ -131,10 +131,10 @@ export const customModules = [
 ];
 
 export const clientInterests = [
-  { id: 'COPY_TRADING', label: 'Copy trading account' },
+  { id: 'TRADING_PLAN', label: 'An automated trading plan' },
   { id: 'ALGO_AUTOMATION', label: 'Algo automation' },
   { id: 'TRADINGVIEW_AUTOMATION', label: 'TradingView automation' },
-  { id: 'STRATEGY_SUBSCRIPTION', label: 'Strategy subscription' },
+  { id: 'STRATEGY_SUBSCRIPTION', label: 'Strategy plans and pricing' },
   { id: 'DEMO', label: 'A free demo' },
   { id: 'OTHER', label: 'Something else' },
 ];
@@ -155,20 +155,96 @@ export const clientSizes = [
   { id: 'OVER_5000', label: 'Over 5,000' },
 ];
 
-export const engagements = [
+/** Client plans (B2B partners get a quote instead). */
+export const plans = [
   {
-    name: 'Platform access',
-    who: 'Individual traders and small groups',
-    gets: 'An account on our platform, copy trading or automation, broker connection and support.',
+    id: 'MONTHLY',
+    name: 'Monthly',
+    price: '24,999',
+    per: 'per month',
+    badge: null,
+    maintenance: 'Maintenance included',
+    lots: 'Up to 2 lots',
+    features: [
+      'NIFTY and BANKNIFTY',
+      '1 to 2 selected strategies',
+      'Automated trade execution',
+      'Advanced trading dashboard',
+      'Strategy monitoring',
+      'Previous studies and performance analysis',
+      'Basic education and system guidance',
+    ],
   },
+  {
+    id: 'QUARTERLY',
+    name: 'Quarterly',
+    price: '64,999',
+    per: 'per quarter',
+    badge: null,
+    maintenance: '₹1,500 a month maintenance',
+    lots: 'Up to 4 lots',
+    features: [
+      'NIFTY, BANKNIFTY and SENSEX',
+      'Multiple strategy access',
+      'Automated entry and exit',
+      'Advanced dashboard',
+      'Previous studies and performance data',
+      'Strategy performance monitoring',
+      'Education and system guidance',
+    ],
+  },
+  {
+    id: 'HALF_YEARLY',
+    name: 'Half-yearly',
+    price: '1,09,999',
+    per: 'per 6 months',
+    badge: 'Most popular',
+    maintenance: '₹1,500 a month maintenance',
+    lots: 'Up to 6 lots',
+    features: [
+      'NIFTY, BANKNIFTY and SENSEX',
+      'Selected stock options',
+      'Multiple advanced strategies',
+      'Fully automated execution',
+      'Advanced dashboard and trade monitoring',
+      'Previous studies and performance analysis',
+      'Strategy updates and optimisation',
+      'Education and system guidance',
+    ],
+  },
+  {
+    id: 'YEARLY',
+    name: 'Yearly',
+    price: '1,51,000',
+    per: 'per year',
+    badge: 'Complete premium access',
+    maintenance: 'No maintenance charge',
+    lots: 'No lot limit',
+    features: [
+      'NIFTY, BANKNIFTY and SENSEX',
+      'Index and stock options',
+      'All available strategies',
+      'Fully automated trading system',
+      'Advanced dashboard',
+      'Strategy and performance monitoring',
+      'Previous studies and analysis',
+      'Strategy updates and optimisation',
+      'Complete education and system guidance',
+    ],
+  },
+];
+
+export const engagements = [
   {
     name: 'White label',
     who: 'Brokers, advisors, educators',
     gets: 'The full platform under your brand with admin panel and client licences. Priced on your client base.',
+    href: '/contact/?type=partner&interest=WHITE_LABEL',
   },
   {
     name: 'Custom development',
     who: 'Firms with a specific need',
     gets: 'Features built to your brief. Priced after we scope the work together.',
+    href: '/contact/?type=partner&interest=CUSTOM_DEVELOPMENT',
   },
 ];
