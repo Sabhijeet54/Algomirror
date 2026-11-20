@@ -317,6 +317,8 @@ legend span { font-weight: 400; color: var(--muted); font-size: var(--t-small); 
 .foot__grid { display: grid; grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr)); gap: var(--gutter); padding-top: 48px; padding-bottom: 40px; }
 .foot .logo { color: var(--night-ink); }
 .foot .logo__sub { color: var(--night-muted); }
+.foot__mail a { color: var(--night-ink); text-decoration: underline; text-underline-offset: 3px; }
+.foot__mail a:hover { color: #8fa6ff; }
 .foot__brand p { margin-top: 16px; color: var(--night-muted); max-width: 22rem; font-size: var(--t-small); }
 .foot__col h2 { font: 500 var(--t-micro) var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--night-muted); margin-bottom: 14px; }
 .foot__col ul { display: grid; gap: 4px; }

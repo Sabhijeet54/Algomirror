@@ -6,6 +6,7 @@ export const site = {
   name: 'Sanchay Technologies',
   short: 'Sanchay',
   url: 'https://sanchaytechnologies.com',
+  email: 'info@sanchaytechnologies.com',
   description:
     'Sanchay Technologies builds copy trading and trading automation software for brokers, advisors and trading desks in India: white label platforms and custom builds.',
   app: APP,
