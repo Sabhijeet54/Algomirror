@@ -111,5 +111,33 @@ function router(root: HTMLElement) {
 }
 document.querySelectorAll<HTMLElement>('[data-router]').forEach(router);
 
+/* ---------------- market status chip (real IST time) ---------------- */
+const mkt = document.querySelector<HTMLElement>('[data-market]');
+if (mkt) {
+  const now = new Date(Date.now() + (330 + new Date().getTimezoneOffset()) * 60_000);
+  const mins = now.getHours() * 60 + now.getMinutes();
+  const open = now.getDay() >= 1 && now.getDay() <= 5 && mins >= 555 && mins < 930;
+  mkt.dataset.open = String(open);
+  mkt.textContent = open ? 'Market open' : 'Market closed';
+}
+
+/* ---------------- ticker: one endless loop on the GSAP clock ---------------- */
+document.querySelectorAll<HTMLElement>('[data-marquee]').forEach((track) => {
+  if (!motion) return;
+  const loop = gsap.to(track, { xPercent: -50, duration: 38, ease: 'none', repeat: -1 });
+  ScrollTrigger.create({ trigger: track, start: 'top bottom', end: 'bottom top', onToggle: (s) => (s.isActive ? loop.play() : loop.pause()) });
+  track.addEventListener('pointerenter', () => gsap.to(loop, { timeScale: 0.25, duration: 0.6 }));
+  track.addEventListener('pointerleave', () => gsap.to(loop, { timeScale: 1, duration: 0.6 }));
+});
+
+/* ---------------- facts count up once ---------------- */
+if (motion) {
+  document.querySelectorAll<HTMLElement>('[data-count]').forEach((el) => {
+    const end = Number(el.dataset.count);
+    const o = { v: 0 };
+    gsap.to(o, { v: end, duration: 1.2, ease: 'power2.out', scrollTrigger: { trigger: el, start: 'top 90%', once: true }, onUpdate: () => (el.textContent = String(Math.round(o.v))) });
+  });
+}
+
 /* ---------------- forms ---------------- */
 document.querySelectorAll<HTMLFormElement>('[data-enquiry]').forEach(initForm);

@@ -1,7 +1,8 @@
 ---
 import Base from '../layouts/Base.astro';
 import Router from '../components/Router.astro';
-import { audiences, brokers, faqs, partnerOptions, products, site, steps } from '../data/site';
+import { audiences, brokers, faqs, partnerOptions, plans, products, site, steps } from '../data/site';
+const tickerItems = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'Stock options', ...brokers];
 ---
 <Base>
   <section class="hero wrap">
@@ -27,8 +28,22 @@ import { audiences, brokers, faqs, partnerOptions, products, site, steps } from 
         Already a client? <a href={site.login}>Log in</a> or <a href={site.signup}>create an account</a>.
       </p>
     </div>
-    <div class="hero__fig">
-      <Router />
+    <div class="hero__fig" data-intro>
+      <div class="panel">
+        <div class="panel__bar" aria-hidden="true">
+          <span class="panel__dots"><i></i><i></i><i></i></span>
+          <span class="panel__title">Live routing</span>
+          <span class="panel__mkt" data-market>NSE · BSE</span>
+        </div>
+        <Router />
+      </div>
+    </div>
+  </section>
+
+  <section class="ticker" aria-label="Markets and brokers">
+    <div class="ticker__track" data-marquee>
+      <ul class="ticker__set">{tickerItems.map((t) => <li>{t}</li>)}</ul>
+      <ul class="ticker__set" aria-hidden="true">{tickerItems.map((t) => <li>{t}</li>)}</ul>
     </div>
   </section>
 
@@ -74,13 +89,13 @@ import { audiences, brokers, faqs, partnerOptions, products, site, steps } from 
     </div>
   </section>
 
-  <section class="brokers" aria-labelledby="brk-h">
-    <div class="wrap brokers__in">
-      <h2 id="brk-h" class="brokers__h" data-reveal>Connects with</h2>
-      <ul class="brokers__list" data-reveal data-stagger>
-        {brokers.map((b) => <li>{b}</li>)}
-      </ul>
-    </div>
+  <section class="facts wrap" aria-label="At a glance">
+    <ul class="facts__list" data-reveal data-stagger>
+      <li><b data-count="10">10</b><span>brokers connected</span></li>
+      <li><b data-count="3">3</b><span>indices, plus stock options</span></li>
+      <li><b data-count="4">4</b><span>plans for traders</span></li>
+      <li><b data-count="1">1</b><span>tap to stop everything</span></li>
+    </ul>
   </section>
 
   <section class="who wrap" aria-labelledby="who-h">
@@ -126,18 +141,32 @@ import { audiences, brokers, faqs, partnerOptions, products, site, steps } from 
     </div>
   </section>
 
-  <section class="price wrap" aria-labelledby="pr-h">
-    <h2 id="pr-h" class="h2" data-reveal>Simple plans</h2>
-    <div class="price__body" data-reveal>
-      <p>
-        Plans for traders start at ₹24,999 a month, with quarterly, half-yearly and yearly options. Brokers and firms get a quote
-        made for their setup.
-      </p>
+  <section class="peek wrap" aria-labelledby="pr-h">
+    <div class="sec-head">
+      <h2 id="pr-h" class="h2" data-reveal>Plans for traders</h2>
+      <p class="sec-head__lead" data-reveal>From one month to a full year. Longer plans cover more indices, more strategies and more lots.</p>
+    </div>
+    <ul class="peek__list" data-reveal data-stagger>
+      {
+        plans.map((p) => (
+          <li>
+            <a href="/pricing/" class:list={['peek__card', { 'peek__card--hot': p.id === 'HALF_YEARLY' }]}>
+              <span class="peek__name">{p.name}</span>
+              <span class="peek__price">₹{p.price}</span>
+              <span class="peek__lots">{p.lots}</span>
+              {p.badge ? <span class="peek__badge">{p.badge}</span> : null}
+              <svg class="arr peek__arr" viewBox="0 0 40 40" aria-hidden="true"><path d="M6 20h26M22 9l11 11-11 11" fill="none" stroke="currentColor" stroke-width="3" /></svg>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+    <p class="peek__more" data-reveal>
       <a href="/pricing/" class="lnk lnk--arrow">
-        See the plans
+        Compare every plan
         <svg class="arr" viewBox="0 0 40 40" aria-hidden="true"><path d="M6 20h26M22 9l11 11-11 11" fill="none" stroke="currentColor" stroke-width="3"></path></svg>
       </a>
-    </div>
+    </p>
   </section>
 
   <section class="faq wrap" aria-labelledby="faq-h">
