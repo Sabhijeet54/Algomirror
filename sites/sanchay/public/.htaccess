@@ -1,0 +1,25 @@
+# Sanchay Technologies (Hostinger / LiteSpeed)
+Options -Indexes
+ErrorDocument 404 /404.html
+
+RewriteEngine On
+# HTTPS and the bare domain
+RewriteCond %{HTTPS} off [OR]
+RewriteCond %{HTTP_HOST} ^www\. [NC]
+RewriteRule ^ https://sanchaytechnologies.com%{REQUEST_URI} [L,R=301]
+# Old habit links: /login and /signup go to the trading platform
+RewriteRule ^(login|signin)/?$ https://trade.sanchaytechnologies.com/login [L,R=302]
+RewriteRule ^(signup|register)/?$ https://trade.sanchaytechnologies.com/register [L,R=302]
+RewriteRule ^trade/?$ https://trade.sanchaytechnologies.com/ [L,R=302]
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  <FilesMatch "\.(woff2|svg|png|jpg|webp|css|js)$">
+    Header set Cache-Control "public, max-age=2592000"
+  </FilesMatch>
+  <FilesMatch "\.html$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>

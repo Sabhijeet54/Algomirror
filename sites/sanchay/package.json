@@ -1,0 +1,19 @@
+{
+  "name": "sanchay-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "^3.7.6",
+    "astro": "^5.18.2",
+    "gsap": "^3.15.1"
+  },
+  "devDependencies": {
+    "axe-core": "^4.14.1",
+    "playwright": "^1.65.1"
+  }
+}

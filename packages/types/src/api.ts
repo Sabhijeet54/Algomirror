@@ -308,3 +308,24 @@ export interface SystemHealthDetail extends HealthResponse {
   brokerStreams: Array<{ brokerAccountId: string; broker: BrokerName; state: string; lastEventAt: IsoDate | null }>;
   recentEvents: SystemEventView[];
 }
+
+// ---------- Website enquiries ----------
+
+export interface EnquiryView {
+  id: string;
+  kind: 'CLIENT' | 'PARTNER';
+  status: 'NEW' | 'CONTACTED' | 'CLOSED';
+  name: string;
+  email: string;
+  phone: string;
+  company: string | null;
+  city: string | null;
+  interest: string;
+  details: { partnerType?: string; clients?: string; modules?: string[] } | null;
+  message: string | null;
+  note: string | null;
+  page: string | null;
+  ip: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

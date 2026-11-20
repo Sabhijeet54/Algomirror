@@ -1,0 +1,30 @@
+---
+import Base from '../layouts/Base.astro';
+import EnquiryForm from '../components/EnquiryForm.astro';
+import { site } from '../data/site';
+---
+<Base title="Contact" description="Send an enquiry to Sanchay Technologies as a client or as a partner (white label or custom development)." current="/contact/">
+  <section class="contact wrap">
+    <div class="contact__side">
+      <h1 class="page-title"><span data-intro>Talk to us</span></h1>
+      <p class="page-lead" data-intro>Tell us who you are and what you need. A real person replies within one working day.</p>
+      <dl class="contact__facts" data-intro>
+        <div>
+          <dt>Clients</dt>
+          <dd>Want an account, a demo or automation for your own trading.</dd>
+        </div>
+        <div>
+          <dt>Partners</dt>
+          <dd>Want a white label platform or software built for your business.</dd>
+        </div>
+        <div>
+          <dt>Already a client</dt>
+          <dd><a href={site.login}>Log in</a> to the platform for support from your dashboard.</dd>
+        </div>
+      </dl>
+    </div>
+    <div class="contact__form" data-intro>
+      <EnquiryForm />
+    </div>
+  </section>
+</Base>

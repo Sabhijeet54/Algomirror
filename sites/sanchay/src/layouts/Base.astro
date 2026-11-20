@@ -1,0 +1,170 @@
+---
+import Logo from '../components/Logo.astro';
+import { site } from '../data/site';
+import '../styles/tokens.css';
+import '../styles/base.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+  /** Section of the nav that is current (href). */
+  current?: string;
+  noindex?: boolean;
+}
+const { title, description = site.description, current, noindex = false } = Astro.props;
+const fullTitle = title ? `${title} | ${site.name}` : `${site.name} | Copy trading and automation software`;
+const canonical = new URL(Astro.url.pathname, site.url).href;
+const ogImage = new URL('/og.png', site.url).href;
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'Organization',
+  name: site.name,
+  url: site.url,
+  logo: new URL('/favicon.svg', site.url).href,
+  description: site.description,
+};
+const year = new Date().getFullYear();
+---
+<!doctype html>
+<html lang="en-IN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    {noindex && <meta name="robots" content="noindex" />}
+    <meta name="theme-color" content="#eef0f2" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={site.name} />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preload" href="/fonts/supreme-800-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/supreme-400-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+    <script is:inline>
+      document.documentElement.classList.add('js');
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) document.documentElement.classList.add('motion');
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="top" data-top>
+      <div class="top__in">
+        <a href="/" class="top__home" aria-label={`${site.name} home`}>
+          <Logo />
+        </a>
+        <nav class="top__nav" aria-label="Main">
+          <ul>
+            {
+              site.nav.map((n) => (
+                <li>
+                  <a href={n.href} class="navlink" aria-current={current === n.href ? 'page' : undefined}>
+                    <span class="roll" data-text={n.label}>
+                      <span>{n.label}</span>
+                    </span>
+                  </a>
+                </li>
+              ))
+            }
+          </ul>
+        </nav>
+        <div class="top__act">
+          <a href={site.login} class="btn btn--ghost btn--sm">
+            <span class="roll" data-text="Log in"><span>Log in</span></span>
+          </a>
+          <a href={site.signup} class="btn btn--sm">
+            <span class="roll" data-text="Sign up"><span>Sign up</span></span>
+          </a>
+          <button class="top__menu" type="button" aria-expanded="false" aria-controls="mnav" data-menu>
+            <span class="sr-only">Menu</span>
+            <span class="top__bars" aria-hidden="true"></span>
+          </button>
+        </div>
+      </div>
+      <nav class="mnav" id="mnav" aria-label="Mobile" hidden>
+        <ul>
+          {
+            site.nav.map((n) => (
+              <li>
+                <a href={n.href} aria-current={current === n.href ? 'page' : undefined}>
+                  {n.label}
+                </a>
+              </li>
+            ))
+          }
+        </ul>
+        <div class="mnav__act">
+          <a href={site.login} class="btn btn--ghost">Log in</a>
+          <a href={site.signup} class="btn">Sign up</a>
+        </div>
+      </nav>
+    </header>
+
+    <main id="main" tabindex="-1">
+      <slot />
+    </main>
+
+    <footer class="foot">
+      <div class="foot__cta wrap">
+        <p class="foot__ask">Building something for your clients?</p>
+        <a href="/contact/" class="foot__big" data-arrow>
+          <span>Talk to us</span>
+          <svg class="arr" viewBox="0 0 40 40" aria-hidden="true"><path d="M6 20h26M22 9l11 11-11 11" fill="none" stroke="currentColor" stroke-width="3"></path></svg>
+        </a>
+      </div>
+      <div class="foot__grid wrap">
+        <div class="foot__brand">
+          <Logo size={36} />
+          <p>Copy trading and trading automation software for brokers, advisors and trading desks in India.</p>
+        </div>
+        <nav aria-label="Company" class="foot__col">
+          <h2>Company</h2>
+          <ul>
+            <li><a href="/#platform">Platform</a></li>
+            <li><a href="/partners/">Partners</a></li>
+            <li><a href="/pricing/">Pricing</a></li>
+            <li><a href="/contact/">Contact</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="Platform account" class="foot__col">
+          <h2>Account</h2>
+          <ul>
+            <li><a href={site.login}>Log in</a></li>
+            <li><a href={site.signup}>Sign up</a></li>
+            <li><a href="/contact/?type=client&interest=DEMO">Book a demo</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="Legal" class="foot__col">
+          <h2>Legal</h2>
+          <ul>
+            {
+              site.legal.map((l) => (
+                <li>
+                  <a href={l.href}>{l.label}</a>
+                </li>
+              ))
+            }
+          </ul>
+        </nav>
+      </div>
+      <div class="foot__base wrap">
+        <p class="foot__risk">
+          Sanchay Technologies provides software only. We do not give investment advice, recommend securities or manage
+          money. Trading in securities and derivatives involves risk of loss. <a href="/disclaimer/">Read the risk disclaimer</a>.
+        </p>
+        <p class="foot__copy">© {year} {site.name}</p>
+      </div>
+      <svg class="foot__word" viewBox="0 0 1000 230" aria-hidden="true" focusable="false"><text x="500" y="215" text-anchor="middle">Sanchay</text></svg>
+    </footer>
+
+    <script>
+      import '../scripts/site';
+    </script>
+  </body>
+</html>

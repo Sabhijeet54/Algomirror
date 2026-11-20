@@ -3,10 +3,12 @@
 # on this VM with small memory settings, the platform as a systemd service, Caddy for HTTPS. Safe to run again.
 set -euo pipefail
 
-DOMAIN="${1:?Usage: setup.sh <domain> [extra domains, comma separated]}"
+DOMAIN="${1:?Usage: setup.sh <domain> [extra domains, comma separated] [public site origins, comma separated]}"
 # More domains serving the same app (e.g. trade.sanchaytechnologies.com); each needs an A record to this VM.
 EXTRA_DOMAINS="$(echo "${2:-}" | tr ',' ' ')"
 EXTRA_ORIGINS="$(for d in $EXTRA_DOMAINS; do printf 'https://%s,' "$d"; done | sed 's/,$//')"
+# Public websites (static, hosted elsewhere) whose enquiry form posts to this API.
+SITE_ORIGINS="$(echo "${3:-}" | tr -d ' ')"
 APP_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 ENV_FILE=/opt/ctp/.env
 export DEBIAN_FRONTEND=noninteractive
@@ -89,6 +91,7 @@ WorkingDirectory=$APP_DIR
 EnvironmentFile=$ENV_FILE
 Environment=API_INTERNAL_URL=http://127.0.0.1:4000
 Environment=EXTRA_WEB_ORIGINS=$EXTRA_ORIGINS
+Environment=PUBLIC_SITE_ORIGINS=$SITE_ORIGINS
 ExecStart=/bin/sh scripts/start.sh
 Restart=always
 RestartSec=5

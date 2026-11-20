@@ -11,6 +11,7 @@ import type {
   BrokerAccountView,
   CopyHaltState,
   CopyOrderView,
+  EnquiryView,
   LoginRequest,
   MasterTradeView,
   Paginated,
@@ -171,6 +172,13 @@ export const useAdminMasterTrades = (p: Query) => useAdminList<MasterTradeView>(
 export const useAdminCopyOrders = (p: Query) => useAdminList<CopyOrderView>('copy-orders', '/admin/copy-orders', p);
 export const useAdminPositions = (p: Query) => useAdminList<PositionView>('positions', '/admin/positions', p);
 export const useAdminAuditLogs = (p: Query) => useAdminList<AuditLogView>('audit-logs', '/admin/audit-logs', p);
+export const useAdminEnquiries = (p: Query) =>
+  useQuery({
+    queryKey: qk.admin('enquiries', p),
+    queryFn: () => api<Paginated<EnquiryView> & { counts: Record<'CLIENT' | 'PARTNER', number> }>('/admin/enquiries', { query: p }),
+    placeholderData: (prev) => prev,
+    refetchInterval: 60_000,
+  });
 export const useAdminSystemEvents = (p: Query) => useAdminList<SystemEventView>('system-events', '/admin/system-events', p);
 export const useAdminSystemHealth = () =>
   useQuery({

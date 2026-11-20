@@ -1,0 +1,23 @@
+---
+/** Mark: one signal (dot) fanning out into three growing bars (accounts that accumulate). */
+interface Props {
+  size?: number;
+  wordmark?: boolean;
+  class?: string;
+}
+const { size = 30, wordmark = true, class: cls } = Astro.props;
+---
+<span class:list={['logo', cls]}>
+  <svg class="logo__mark" width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+    <path d="M8.5 16 C 13 16, 12 6.5, 17 6.5 H22.5 M8.5 16 H26.5 M8.5 16 C 13 16, 12 25.5, 17 25.5 H30" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+    <circle cx="5" cy="16" r="3.8" fill="var(--accent)"></circle>
+  </svg>
+  {
+    wordmark && (
+      <span class="logo__word">
+        <span class="logo__name">Sanchay</span>
+        <span class="logo__sub">Technologies</span>
+      </span>
+    )
+  }
+</span>

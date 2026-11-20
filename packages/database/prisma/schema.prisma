@@ -703,3 +703,41 @@ model BrokerApiConfig {
 
   @@unique([userId, broker])
 }
+
+enum EnquiryKind {
+  CLIENT
+  PARTNER
+}
+
+enum EnquiryStatus {
+  NEW
+  CONTACTED
+  CLOSED
+}
+
+/// Form sent from the public company website (sanchaytechnologies.com): a client enquiry or a partner request.
+model Enquiry {
+  id        String        @id @default(cuid())
+  kind      EnquiryKind
+  status    EnquiryStatus @default(NEW)
+  name      String
+  email     String
+  phone     String
+  company   String?
+  city      String?
+  /// CLIENT: what they want (COPY_TRADING, ALGO_AUTOMATION …); PARTNER: WHITE_LABEL or CUSTOM_DEVELOPMENT.
+  interest  String
+  /// Extra answers: { partnerType, clients, modules[] }.
+  details   Json?
+  message   String?
+  /// Admin's own note (who called, what was agreed).
+  note      String?
+  page      String?
+  ip        String?
+  userAgent String?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([kind, createdAt])
+  @@index([status])
+}

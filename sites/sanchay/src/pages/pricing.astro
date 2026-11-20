@@ -1,0 +1,52 @@
+---
+import Base from '../layouts/Base.astro';
+import { engagements } from '../data/site';
+---
+<Base title="Pricing" description="Sanchay Technologies prices each engagement to your setup: platform access, white label or custom development. Talk to us for a quote." current="/pricing/">
+  <section class="page-hero wrap">
+    <h1 class="page-title"><span data-intro>Pricing</span></h1>
+    <p class="page-lead" data-intro>
+      Every setup is different, so every quote is too. We price on the number of clients, the features you use and the support
+      you want. A short call is enough for us to send a written quote.
+    </p>
+    <div class="hero__act" data-intro>
+      <a href="/contact/" class="btn btn--lg">
+        <span class="roll" data-text="Get a quote"><span>Get a quote</span></span>
+      </a>
+    </div>
+  </section>
+
+  <section class="wrap" aria-labelledby="eng-h">
+    <h2 id="eng-h" class="sr-only">Ways to work with us</h2>
+    <div class="table" role="table" aria-label="Ways to work with us">
+      <div class="table__row table__row--head" role="row">
+        <span role="columnheader">Engagement</span>
+        <span role="columnheader">For</span>
+        <span role="columnheader">What you get</span>
+        <span role="columnheader">Price</span>
+      </div>
+      {
+        engagements.map((e) => (
+          <div class="table__row" role="row" data-reveal>
+            <span role="cell" class="table__name">{e.name}</span>
+            <span role="cell">{e.who}</span>
+            <span role="cell">{e.gets}</span>
+            <span role="cell">
+              <a href="/contact/" class="lnk">Talk to us</a>
+            </span>
+          </div>
+        ))
+      }
+    </div>
+  </section>
+
+  <section class="wrap notes" aria-labelledby="pn-h">
+    <h2 id="pn-h" class="h3">Good to know</h2>
+    <ul>
+      <li>No profit share. You pay for the software, not a cut of what trades make.</li>
+      <li>Brokerage, exchange charges and taxes on trades are separate and go to the broker.</li>
+      <li>Prices are quoted in Indian rupees. GST is added as applicable.</li>
+      <li>Fees are not refundable once a service is activated. See the <a href="/refund-policy/">refund policy</a>.</li>
+    </ul>
+  </section>
+</Base>

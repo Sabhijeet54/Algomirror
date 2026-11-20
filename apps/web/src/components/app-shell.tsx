@@ -20,6 +20,7 @@ import {
   KeyRound,
   Layers,
   History,
+  Inbox,
   LayoutDashboard,
   ListOrdered,
   LogOut,
@@ -127,6 +128,7 @@ const MENUS: Partial<Record<Role, NavSection[]>> = {
     {
       title: 'Operations',
       items: [
+        { href: '/admin/enquiries', label: 'Website enquiries', icon: Inbox },
         { href: '/admin/brokers', label: 'Broker connections', icon: Wallet },
         { href: '/admin/logs', label: 'Audit logs', icon: ScrollText },
         { href: '/admin/system-health', label: 'System health', icon: Activity },
@@ -222,9 +224,12 @@ export function AppShell({ user, children }: { user: AuthUser; children: React.R
   const isSubAdmin = !!(user as AuthUser & { isSubAdmin?: boolean }).isSubAdmin;
   const [profileOpen, setProfileOpen] = useState(false);
   const quota = useMasterLicenceQuota(user.role === 'MASTER');
-  const sections = (MENUS[user.role === 'SUB_ADMIN' ? 'ADMIN' : user.role] ?? []).map((sec) =>
-    isSubAdmin ? { ...sec, items: sec.items.filter((i) => i.href !== '/broker' && i.href !== '/broker-api' && i.href !== '/master/sub-admins' && i.href !== '/master/automation') } : sec,
-  );
+  const sections = (MENUS[user.role === 'SUB_ADMIN' ? 'ADMIN' : user.role] ?? [])
+    .map((sec) =>
+      isSubAdmin ? { ...sec, items: sec.items.filter((i) => i.href !== '/broker' && i.href !== '/broker-api' && i.href !== '/master/sub-admins' && i.href !== '/master/automation') } : sec,
+    )
+    // Website enquiries are for the full admin only.
+    .map((sec) => (user.role === 'SUB_ADMIN' ? { ...sec, items: sec.items.filter((i) => i.href !== '/admin/enquiries') } : sec));
   const workspaceLabel = user.role === 'ADMIN' ? 'Admin workspace' : user.role === 'SUB_ADMIN' ? 'Sub-admin workspace' : user.role === 'MASTER' ? (isSubAdmin ? 'Sub-admin · master workspace' : 'Master workspace') : 'Client workspace';
 
   const sidebar = (mini: boolean) => (

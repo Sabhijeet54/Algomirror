@@ -1,0 +1,79 @@
+---
+import Base from '../layouts/Base.astro';
+import { customModules, partnerOptions } from '../data/site';
+---
+<Base title="Partners" description="White label copy trading and automation platform under your brand, or custom trading software built to your brief." current="/partners/">
+  <section class="page-hero wrap">
+    <h1 class="page-title"><span data-intro>Partners</span></h1>
+    <p class="page-lead" data-intro>
+      For brokers, authorised persons, advisors and educators who want to give clients automation under their own name. Choose the
+      way in that fits you.
+    </p>
+  </section>
+
+  <section class="wrap pt" aria-labelledby="wl-h">
+    <div class="pt__num" aria-hidden="true">A</div>
+    <div class="pt__body">
+      <p class="offer__tag offer__tag--ink">{partnerOptions.whiteLabel.status}</p>
+      <h2 id="wl-h" class="h2">{partnerOptions.whiteLabel.name}</h2>
+      <p class="pt__lead">{partnerOptions.whiteLabel.text}</p>
+      <ul class="ticks">
+        {partnerOptions.whiteLabel.points.map((p) => <li>{p}</li>)}
+      </ul>
+      <div class="pt__price">
+        <p><b>Price</b> depends on your client base and setup. Contact us and we will send it.</p>
+        <a href="/contact/?type=partner&interest=WHITE_LABEL" class="btn btn--lg">
+          <span class="roll" data-text="Contact for price"><span>Contact for price</span></span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap pt pt--alt" id="custom" aria-labelledby="cd-h">
+    <div class="pt__num" aria-hidden="true">B</div>
+    <div class="pt__body">
+      <p class="offer__tag offer__tag--ink">{partnerOptions.custom.status}</p>
+      <h2 id="cd-h" class="h2">{partnerOptions.custom.name}</h2>
+      <p class="pt__lead">{partnerOptions.custom.text}</p>
+      <form class="modpick" action="/contact/" method="get" aria-labelledby="mp-h">
+        <h3 id="mp-h">Pick what you need</h3>
+        <input type="hidden" name="type" value="partner" />
+        <input type="hidden" name="interest" value="CUSTOM_DEVELOPMENT" />
+        <div class="mods__grid">
+          {
+            customModules.map((m) => (
+              <label class="chk">
+                <input type="checkbox" name="m" value={m.id} />
+                <span>{m.label}</span>
+              </label>
+            ))
+          }
+        </div>
+        <button type="submit" class="btn btn--lg" data-modpick>
+          <span class="roll" data-text="Continue to enquiry"><span>Continue to enquiry</span></span>
+        </button>
+      </form>
+    </div>
+  </section>
+
+  <section class="wrap steps-sm" aria-labelledby="pp-h">
+    <h2 id="pp-h" class="h3">What happens after you write to us</h2>
+    <ol>
+      <li><b>A call within one working day</b> to understand your clients and what you want to offer.</li>
+      <li><b>A demo</b> of the live platform, admin panel included.</li>
+      <li><b>A written proposal</b> with scope, timeline and price.</li>
+      <li><b>Setup and launch</b> under your brand, with training for your team.</li>
+    </ol>
+  </section>
+</Base>
+
+<script>
+  // Turn the module picks into one `modules` parameter for the contact form.
+  document.querySelectorAll<HTMLFormElement>('.modpick').forEach((f) => {
+    f.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const picked = Array.from(f.querySelectorAll<HTMLInputElement>('input[name="m"]:checked')).map((c) => c.value);
+      location.href = `/contact/?type=partner&interest=CUSTOM_DEVELOPMENT${picked.length ? `&modules=${picked.join(',')}` : ''}`;
+    });
+  });
+</script>

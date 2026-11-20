@@ -14,6 +14,7 @@ import { PrismaModule } from './common/prisma/prisma.service';
 import { REDIS, RedisModule } from './common/redis/redis.module';
 import { RedisThrottlerStorage } from './common/throttler/redis-throttler.storage';
 import { ConfigModule } from './config/config.module';
+import { EnquiriesModule } from './enquiries/enquiries.module';
 import { HealthModule } from './health/health.module';
 import { NotificationsModule } from './notifications/mail.service';
 import { UsersModule } from './users/users.module';
@@ -34,6 +35,7 @@ import { MarketDataModule } from './market-data/market-data.module';
       }),
     }),
     AuditModule,
+    EnquiriesModule,
     RealtimeModule,
     NotificationsModule,
     AuthModule,

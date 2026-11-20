@@ -1,0 +1,159 @@
+---
+import Base from '../layouts/Base.astro';
+import Router from '../components/Router.astro';
+import { audiences, brokers, faqs, partnerOptions, products, site, steps } from '../data/site';
+---
+<Base>
+  <section class="hero wrap">
+    <div class="hero__copy">
+      <h1 class="hero__title">
+        <span class="line"><span data-intro>One signal.</span></span>
+        <span class="line"><span data-intro>Every account.</span></span>
+      </h1>
+      <p class="hero__lead" data-intro>
+        We build the software that takes one trade, from a person or a strategy, and places it in every linked broker account,
+        each at its own size and inside its own limits.
+      </p>
+      <div class="hero__act" data-intro>
+        <a href="/contact/" class="btn btn--lg">
+          <span class="roll" data-text="Talk to us"><span>Talk to us</span></span>
+        </a>
+        <a href="/partners/" class="lnk lnk--arrow">
+          Become a partner
+          <svg class="arr" viewBox="0 0 40 40" aria-hidden="true"><path d="M6 20h26M22 9l11 11-11 11" fill="none" stroke="currentColor" stroke-width="3"></path></svg>
+        </a>
+      </div>
+      <p class="hero__acct" data-intro>
+        Already a client? <a href={site.login}>Log in</a> or <a href={site.signup}>create an account</a>.
+      </p>
+    </div>
+    <div class="hero__fig">
+      <Router />
+    </div>
+  </section>
+
+  <section class="build wrap" id="platform" aria-labelledby="build-h">
+    <div class="sec-head">
+      <h2 id="build-h" class="h2" data-reveal>What we build</h2>
+      <p class="sec-head__lead" data-reveal>
+        One platform, five parts. Each one is live today on our own trading platform, and each one comes with every white label.
+      </p>
+    </div>
+    <ol class="index" data-reveal data-stagger>
+      {
+        products.map((p) => (
+          <li class="index__row">
+            <span class="index__code">{p.code}</span>
+            <h3 class="index__name">{p.name}</h3>
+            <p class="index__text">{p.text}</p>
+          </li>
+        ))
+      }
+    </ol>
+  </section>
+
+  <section class="how" aria-labelledby="how-h">
+    <div class="wrap">
+      <h2 id="how-h" class="h2" data-reveal>How it works</h2>
+      <div class="route">
+        <svg class="route__line" viewBox="0 0 1000 20" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0 10 H1000" data-draw></path>
+        </svg>
+        <ol class="route__stops" data-reveal data-stagger>
+          {
+            steps.map((s, i) => (
+              <li class="stop">
+                <span class="stop__n">{String(i + 1).padStart(2, '0')}</span>
+                <h3>{s.title}</h3>
+                <p>{s.text}</p>
+              </li>
+            ))
+          }
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="brokers" aria-labelledby="brk-h">
+    <div class="wrap brokers__in">
+      <h2 id="brk-h" class="brokers__h" data-reveal>Connects with</h2>
+      <ul class="brokers__list" data-reveal data-stagger>
+        {brokers.map((b) => <li>{b}</li>)}
+      </ul>
+    </div>
+  </section>
+
+  <section class="who wrap" aria-labelledby="who-h">
+    <h2 id="who-h" class="h2 who__h" data-reveal>Made for people who trade for others.</h2>
+    <ul class="who__list" data-reveal data-stagger>
+      {
+        audiences.map((a) => (
+          <li>
+            <h3>{a.name}</h3>
+            <p>{a.text}</p>
+          </li>
+        ))
+      }
+    </ul>
+  </section>
+
+  <section class="night" aria-labelledby="pt-h">
+    <div class="wrap">
+      <div class="night__head">
+        <h2 id="pt-h" class="h2" data-reveal>Partner with us</h2>
+        <p data-reveal>Two ways to offer automation to your clients under your own name.</p>
+      </div>
+      <div class="offers">
+        <article class="offer offer--main" data-reveal>
+          <p class="offer__tag">{partnerOptions.whiteLabel.status}</p>
+          <h3>{partnerOptions.whiteLabel.name}</h3>
+          <p>{partnerOptions.whiteLabel.text}</p>
+          <ul>{partnerOptions.whiteLabel.points.map((p) => <li>{p}</li>)}</ul>
+          <a href="/contact/?type=partner&interest=WHITE_LABEL" class="btn btn--light">
+            <span class="roll" data-text="Ask for the price"><span>Ask for the price</span></span>
+          </a>
+        </article>
+        <article class="offer" data-reveal>
+          <p class="offer__tag">{partnerOptions.custom.status}</p>
+          <h3>{partnerOptions.custom.name}</h3>
+          <p>{partnerOptions.custom.text}</p>
+          <a href="/partners/#custom" class="lnk lnk--arrow lnk--light">
+            See what we can build
+            <svg class="arr" viewBox="0 0 40 40" aria-hidden="true"><path d="M6 20h26M22 9l11 11-11 11" fill="none" stroke="currentColor" stroke-width="3"></path></svg>
+          </a>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="price wrap" aria-labelledby="pr-h">
+    <h2 id="pr-h" class="h2" data-reveal>Priced to your setup</h2>
+    <div class="price__body" data-reveal>
+      <p>
+        A trader with one account and a broker with five thousand clients need different things, so we do not print one price.
+        Tell us what you run and we will send a plan and a quote.
+      </p>
+      <a href="/pricing/" class="lnk lnk--arrow">
+        How pricing works
+        <svg class="arr" viewBox="0 0 40 40" aria-hidden="true"><path d="M6 20h26M22 9l11 11-11 11" fill="none" stroke="currentColor" stroke-width="3"></path></svg>
+      </a>
+    </div>
+  </section>
+
+  <section class="faq wrap" aria-labelledby="faq-h">
+    <h2 id="faq-h" class="h2" data-reveal>Fair questions</h2>
+    <div class="faq__list" data-reveal data-stagger>
+      {
+        faqs.map((f) => (
+          <details class="qa">
+            <summary>
+              <span>{f.q}</span>
+              <span class="qa__x" aria-hidden="true" />
+            </summary>
+            <p>{f.a}</p>
+          </details>
+        ))
+      }
+    </div>
+  </section>
+</Base>

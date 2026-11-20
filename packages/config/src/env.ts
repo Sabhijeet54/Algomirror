@@ -85,6 +85,11 @@ export const apiEnvSchema = baseSchema
       .optional()
       .transform((v) => (v ?? '').split(',').map((o) => o.trim().replace(/\/$/, '')).filter(Boolean)),
     API_PUBLIC_URL: z.string().url().default('http://localhost:4000'),
+    /** Public websites allowed to post the enquiry form (comma separated, e.g. https://sanchaytechnologies.com). */
+    PUBLIC_SITE_ORIGINS: z
+      .string()
+      .optional()
+      .transform((v) => (v ?? '').split(',').map((o) => o.trim().replace(/\/$/, '')).filter(Boolean)),
     JWT_SECRET: z
       .string({ required_error: 'JWT_SECRET is required (generate: openssl rand -base64 48)' })
       .min(32, 'JWT_SECRET must be at least 32 characters'),

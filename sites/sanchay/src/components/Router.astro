@@ -1,0 +1,72 @@
+---
+/**
+ * Hero figure: one signal fans out to eight client accounts. Each account takes the order at its own size.
+ * Static SVG is the finished state (reduced motion, no JS); site.ts animates packets and statuses.
+ */
+const accounts = [
+  { id: '01', broker: 'Zerodha', lots: 1 },
+  { id: '02', broker: 'Angel One', lots: 2 },
+  { id: '03', broker: 'Upstox', lots: 1 },
+  { id: '04', broker: 'Dhan', lots: 3 },
+  { id: '05', broker: 'Fyers', lots: 1 },
+  { id: '06', broker: 'Kotak Neo', lots: 2 },
+  { id: '07', broker: 'Groww', lots: 5 },
+  { id: '08', broker: '5paisa', lots: 1 },
+];
+const W = 600;
+const top = 34;
+const step = 56;
+const rowH = 40;
+const sx = 158;
+const sy = top + (step * (accounts.length - 1)) / 2;
+const rx = 322;
+const H = top * 2 + step * (accounts.length - 1);
+---
+<figure class="router" data-router>
+  <svg viewBox={`0 0 ${W} ${H}`} class="router__svg" aria-hidden="true" focusable="false">
+    <g class="router__lines">
+      {
+        accounts.map((_, i) => {
+          const y = top + i * step;
+          return <path d={`M${sx} ${sy} C ${sx + 92} ${sy}, ${rx - 92} ${y}, ${rx} ${y}`} data-line />;
+        })
+      }
+    </g>
+    <g class="router__signal">
+      <rect x="16" y={sy - 46} width={sx - 16} height="92" rx="6"></rect>
+      <text x="32" y={sy - 18} class="router__k">SIGNAL</text>
+      <text x="32" y={sy + 8} class="router__v">BUY NIFTY CE</text>
+      <text x="32" y={sy + 30} class="router__k">1 lot · master</text>
+      <circle cx={sx} cy={sy} r="5" class="router__dot"></circle>
+    </g>
+    <g class="router__rows">
+      {
+        accounts.map((a, i) => {
+          const y = top + i * step;
+          return (
+            <g data-row transform={`translate(${rx} ${y - rowH / 2})`}>
+              <rect width={W - rx - 8} height={rowH} rx="6" />
+              <text x="14" y="25" class="router__acc">
+                ACC {a.id}
+              </text>
+              <text x="62" y="25" class="router__broker">
+                {a.broker}
+              </text>
+              <text x={W - rx - 96} y="25" text-anchor="end" class="router__qty">
+                ×{a.lots}
+              </text>
+              <text x={W - rx - 22} y="25" text-anchor="end" class="router__st" data-st>
+                FILLED
+              </text>
+            </g>
+          );
+        })
+      }
+    </g>
+    <g class="router__packets" data-packets></g>
+  </svg>
+  <figcaption>
+    <span class="sr-only">Illustration: one buy signal is copied to eight client accounts on different brokers, each at its own lot size, and every order shows as filled.</span>
+    <span aria-hidden="true">Illustration. Not live data.</span>
+  </figcaption>
+</figure>

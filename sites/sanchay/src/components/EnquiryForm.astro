@@ -1,0 +1,113 @@
+---
+import { clientInterests, clientSizes, customModules, partnerTypes, site } from '../data/site';
+---
+<form class="form" data-enquiry data-api={site.enquiryApi} novalidate>
+  <fieldset class="seg" data-kind>
+    <legend>I am contacting you as</legend>
+    <label class="seg__opt">
+      <input type="radio" name="kind" value="CLIENT" checked />
+      <span><b>Client</b><small>I want to use the platform</small></span>
+    </label>
+    <label class="seg__opt">
+      <input type="radio" name="kind" value="PARTNER" />
+      <span><b>Partner</b><small>White label or custom development</small></span>
+    </label>
+  </fieldset>
+
+  <div class="form__grid">
+    <label class="fld">
+      <span class="fld__l">Full name</span>
+      <input name="name" autocomplete="name" required minlength="2" maxlength="80" />
+    </label>
+    <label class="fld">
+      <span class="fld__l">Email</span>
+      <input name="email" type="email" autocomplete="email" required maxlength="120" />
+    </label>
+    <label class="fld">
+      <span class="fld__l">Phone / WhatsApp</span>
+      <input name="phone" type="tel" autocomplete="tel" inputmode="tel" required placeholder="+91 98765 43210" maxlength="24" />
+    </label>
+    <label class="fld">
+      <span class="fld__l">City</span>
+      <input name="city" autocomplete="address-level2" maxlength="80" />
+    </label>
+    <label class="fld fld--wide" data-for="CLIENT">
+      <span class="fld__l">What are you looking for?</span>
+      <select name="interest" data-interest-client required>
+        <option value="">Choose one</option>
+        {clientInterests.map((i) => <option value={i.id}>{i.label}</option>)}
+      </select>
+    </label>
+    <label class="fld" data-for="PARTNER" hidden>
+      <span class="fld__l">Company / firm name</span>
+      <input name="company" autocomplete="organization" maxlength="120" />
+    </label>
+    <label class="fld" data-for="PARTNER" hidden>
+      <span class="fld__l">Your business</span>
+      <select name="partnerType">
+        <option value="">Choose one</option>
+        {partnerTypes.map((i) => <option value={i.id}>{i.label}</option>)}
+      </select>
+    </label>
+    <label class="fld" data-for="PARTNER" hidden>
+      <span class="fld__l">Clients you serve</span>
+      <select name="clients">
+        <option value="">Choose one</option>
+        {clientSizes.map((i) => <option value={i.id}>{i.label}</option>)}
+      </select>
+    </label>
+  </div>
+
+  <fieldset class="pick" data-for="PARTNER" hidden>
+    <legend>Partnership</legend>
+    <label class="pick__opt">
+      <input type="radio" name="partnerInterest" value="WHITE_LABEL" required />
+      <span><b>White label solution</b><small>Our ready platform under your brand. Contact us for the price.</small></span>
+    </label>
+    <label class="pick__opt">
+      <input type="radio" name="partnerInterest" value="CUSTOM_DEVELOPMENT" />
+      <span><b>Custom development</b><small>Software built to your brief. Pick what you need below.</small></span>
+    </label>
+  </fieldset>
+
+  <fieldset class="mods" data-for="CUSTOM" hidden>
+    <legend>What should we build? <span>Tick all that apply</span></legend>
+    <div class="mods__grid">
+      {
+        customModules.map((m) => (
+          <label class="chk">
+            <input type="checkbox" name="modules" value={m.id} />
+            <span>{m.label}</span>
+          </label>
+        ))
+      }
+    </div>
+  </fieldset>
+
+  <label class="fld fld--wide">
+    <span class="fld__l">Message <em>(optional)</em></span>
+    <textarea name="message" rows="4" maxlength="2000" placeholder="Tell us a little about what you need"></textarea>
+  </label>
+
+  <div class="hp" aria-hidden="true">
+    <label>Leave this empty <input name="website" tabindex="-1" autocomplete="off" /></label>
+  </div>
+
+  <div class="form__end">
+    <p class="form__note">We reply within one working day. By sending this you agree to our <a href="/privacy-policy/">privacy policy</a>.</p>
+    <button class="btn btn--lg" type="submit" data-submit>
+      <span class="roll" data-text="Send enquiry"><span>Send enquiry</span></span>
+    </button>
+  </div>
+  <p class="form__status" role="status" aria-live="polite" data-status></p>
+</form>
+
+<div class="sent" data-sent hidden tabindex="-1">
+  <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M10 25l9 9 19-20" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+  <h2>Thank you, we have it.</h2>
+  <p data-sent-text>Our team will call or email you within one working day.</p>
+  <p class="sent__links">
+    <a href="/" class="lnk">Back to home</a>
+    <a href={site.signup} class="lnk">Create your account</a>
+  </p>
+</div>

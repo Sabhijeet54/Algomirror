@@ -1,0 +1,74 @@
+@font-face {
+  font-family: 'Supreme';
+  src: url('/fonts/supreme-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Supreme';
+  src: url('/fonts/supreme-500-normal.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Supreme';
+  src: url('/fonts/supreme-700-normal.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Supreme';
+  src: url('/fonts/supreme-800-normal.woff2') format('woff2');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Plex Mono';
+  src: url('/fonts/plex-mono-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Plex Mono';
+  src: url('/fonts/plex-mono-500-normal.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --ground: #eef0f2;
+  --ground-2: #e3e7eb;
+  --ink: #0b1620;
+  --muted: #4e5d6b;
+  --line: rgba(11, 22, 32, 0.14);
+  --accent: #1f4bff;
+  --accent-ink: #ffffff;
+  --night: #0b1620;
+  --night-ink: #e8edf2;
+  --night-muted: #9aa8b6;
+  --night-line: rgba(232, 237, 242, 0.16);
+  --ok: #0e7a4f;
+
+  --font: 'Supreme', ui-sans-serif, system-ui, sans-serif;
+  --mono: 'Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  --ease: cubic-bezier(0.2, 0.7, 0.1, 1);
+  --radius: 6px;
+  --gutter: clamp(16px, 2.2vw, 24px);
+  --pad: clamp(16px, 4vw, 56px);
+  --max: 1320px;
+
+  --t-display: clamp(2.9rem, 1.2rem + 6.4vw, 7.4rem);
+  --t-h2: clamp(2rem, 1.1rem + 3.4vw, 4.4rem);
+  --t-h3: clamp(1.25rem, 1.05rem + 0.8vw, 1.75rem);
+  --t-lead: clamp(1.1rem, 1rem + 0.4vw, 1.35rem);
+  --t-body: 1.0625rem;
+  --t-small: 0.875rem;
+  --t-micro: 0.75rem;
+}

@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://sanchaytechnologies.com/sitemap-index.xml

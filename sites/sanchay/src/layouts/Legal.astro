@@ -1,0 +1,34 @@
+---
+import Base from './Base.astro';
+import { site } from '../data/site';
+
+interface Props {
+  title: string;
+  description: string;
+  updated: string;
+}
+const { title, description, updated } = Astro.props;
+const path = Astro.url.pathname.replace(/\/?$/, '/');
+---
+<Base title={title} description={description}>
+  <div class="legal wrap">
+    <nav class="legal__nav" aria-label="Legal pages">
+      <ul>
+        {
+          site.legal.map((l) => (
+            <li>
+              <a href={l.href} aria-current={l.href === path ? 'page' : undefined}>
+                {l.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+    <article class="legal__doc">
+      <h1 class="legal__title">{title}</h1>
+      <p class="legal__date">Last updated {updated}</p>
+      <slot />
+    </article>
+  </div>
+</Base>
