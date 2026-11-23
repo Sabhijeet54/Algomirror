@@ -2,8 +2,8 @@
  * ORB (opening range breakout), pure logic.
  *
  * The range is the high / low of the underlying from 09:15 IST for `rangeMinutes` (5 → 09:15–09:20, 15 → 09:15–09:30).
- * After that, candles of the same length are built from live prices; a candle that CLOSES above the range high buys a
- * CALL, one that closes below the range low buys a PUT. Stop loss is on the option premium (points or %), target is
+ * After that, the first live price above the range high buys a CALL and the first price below the range low buys a PUT,
+ * straight away inside the running candle (no waiting for a candle close). Stop loss is on the option premium (points or %), target is
  * stop loss × ratio. All positions of the ORB are squared off at the exit time.
  */
 import { AutomationError } from './automation-error';
@@ -72,7 +72,7 @@ export function normalizeOrb(raw: unknown): OrbSettings {
   const lastEntry = String(o.lastEntry || d.lastEntry);
   const exitTime = String(o.exitTime || d.exitTime);
   if (!TIME.test(lastEntry) || !TIME.test(exitTime)) throw new AutomationError('ORB: times must be HH:MM (24 hour, IST)');
-  if (mins(lastEntry) < ORB_OPEN + rangeMinutes * 2) throw new AutomationError('ORB: last entry must leave room for at least one candle after the range');
+  if (mins(lastEntry) <= ORB_OPEN + rangeMinutes) throw new AutomationError('ORB: last entry must be after the range ends');
   if (mins(exitTime) <= mins(lastEntry)) throw new AutomationError('ORB: exit time must be after the last entry time');
   const maxEntries = o.maxEntries == null || o.maxEntries === '' ? d.maxEntries : Number(o.maxEntries);
   if (!Number.isInteger(maxEntries) || maxEntries < 1 || maxEntries > 3) throw new AutomationError('ORB: entries per day must be 1, 2 or 3');
@@ -102,7 +102,7 @@ export interface OrbState {
   ready: boolean;
   /** Range could not be used today (started late); nothing more happens. */
   skipped: boolean;
-  /** Candle being built after the range: its index (0 = first candle after the range) and last price. */
+  /** Legacy (candle-close version); `close` is now just the last price seen after the range. */
   candle: number | null;
   close: number | null;
   entries: number;
@@ -114,11 +114,11 @@ export const newOrbState = (): OrbState => ({ high: null, low: null, fromStart: 
 export type OrbEvent =
   | { type: 'RANGE'; high: number; low: number }
   | { type: 'SKIP'; reason: string }
-  | { type: 'ENTRY'; option: 'CE' | 'PE'; close: number; level: number };
+  | { type: 'ENTRY'; option: 'CE' | 'PE'; /** Price that broke the range. */ close: number; level: number };
 
 /**
- * Feeds one price at `sec` seconds after IST midnight. Returns the new state and what happened. A candle is judged
- * when the first price of the next candle arrives (its close = the last price seen in it).
+ * Feeds one price at `sec` seconds after IST midnight. Returns the new state and what happened. Once the range is
+ * set, a price above its high (CALL) or below its low (PUT) enters at once; a later entry needs the other side.
  */
 export function orbOnPrice(prev: OrbState, cfg: Pick<OrbSettings, 'rangeMinutes' | 'lastEntry' | 'maxEntries'>, sec: number, price: number): { state: OrbState; events: OrbEvent[] } {
   const s: OrbState = { ...prev };
@@ -145,18 +145,13 @@ export function orbOnPrice(prev: OrbState, cfg: Pick<OrbSettings, 'rangeMinutes'
     events.push({ type: 'RANGE', high: s.high, low: s.low });
   }
 
-  const idx = Math.floor((sec - end) / (cfg.rangeMinutes * 60));
-  if (s.candle != null && idx > s.candle && s.close != null) {
-    // Candle s.candle closed at s.close; it may only trigger when it closed by the last entry time.
-    const closedAt = end + (s.candle + 1) * cfg.rangeMinutes * 60;
-    const side = s.close > s.high! ? 'CE' : s.close < s.low! ? 'PE' : null;
-    if (side && closedAt <= mins(cfg.lastEntry) * 60 && s.entries < cfg.maxEntries && side !== s.lastSide) {
-      s.entries++;
-      s.lastSide = side;
-      events.push({ type: 'ENTRY', option: side, close: s.close, level: side === 'CE' ? s.high! : s.low! });
-    }
+  // Live breakout: the first price beyond the range (strictly above the high / below the low) enters.
+  const side = price > s.high! ? 'CE' : price < s.low! ? 'PE' : null;
+  if (side && sec <= mins(cfg.lastEntry) * 60 && s.entries < cfg.maxEntries && side !== s.lastSide) {
+    s.entries++;
+    s.lastSide = side;
+    events.push({ type: 'ENTRY', option: side, close: price, level: side === 'CE' ? s.high! : s.low! });
   }
-  s.candle = idx;
   s.close = price;
   return { state: s, events };
 }

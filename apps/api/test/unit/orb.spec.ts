@@ -1,4 +1,4 @@
-/** ORB: range building, breakout on candle close, entries per day, settings and the option alert. */
+/** ORB: range building, live breakout (no candle close), entries per day, settings and the option alert. */
 import { AutomationError, normalizeAutomation, readAutomation } from '../../src/trading/automation';
 import { DEFAULT_ORB, newOrbState, normalizeOrb, orbAlert, orbOnPrice, type OrbEvent, type OrbState } from '../../src/trading/orb';
 
@@ -38,44 +38,45 @@ describe('ORB range', () => {
   });
 });
 
-describe('ORB breakout', () => {
+describe('ORB breakout (live, no candle close)', () => {
   const range: [string, number][] = [
     ['09:15', 100],
     ['09:18', 110],
     ['09:19', 90],
   ];
 
-  it('buys the CALL when a candle closes above the high (judged when the next candle starts)', () => {
-    const { events } = run({ rangeMinutes: 5 }, [
-      ...range,
-      ['09:21', 112], // spikes above inside the candle ...
-      ['09:24:50', 109], // ... but closes inside: no trade
-      ['09:25', 111],
-      ['09:29:59', 113], // closes above 110
-      ['09:30', 113],
-    ]);
-    expect(events.filter((e) => e.type === 'ENTRY')).toEqual([{ type: 'ENTRY', option: 'CE', close: 113, level: 110 }]);
+  it('buys the CALL the moment price goes above the high, inside the running candle', () => {
+    const { events } = run({ rangeMinutes: 5 }, [...range, ['09:20', 105], ['09:21', 110], ['09:21:07', 111], ['09:21:30', 108]]);
+    expect(events.filter((e) => e.type === 'ENTRY')).toEqual([{ type: 'ENTRY', option: 'CE', close: 111, level: 110 }]);
   });
 
-  it('buys the PUT when a candle closes below the low', () => {
-    const { events } = run({ rangeMinutes: 5 }, [...range, ['09:22', 85], ['09:25', 86]]);
-    expect(events.at(-1)).toEqual({ type: 'ENTRY', option: 'PE', close: 85, level: 90 });
+  it('buys the PUT the moment price goes below the low', () => {
+    const { events } = run({ rangeMinutes: 5 }, [...range, ['09:20:05', 89.5]]);
+    expect(events).toEqual([
+      { type: 'RANGE', high: 110, low: 90 },
+      { type: 'ENTRY', option: 'PE', close: 89.5, level: 90 },
+    ]);
+  });
+
+  it('15 minute range: 09:15 to 09:30, then trades the first break', () => {
+    const { events } = run({ rangeMinutes: 15 }, [['09:15', 100], ['09:22', 120], ['09:29', 95], ['09:30:02', 119], ['09:31', 121]]);
+    expect(events.filter((e) => e.type === 'ENTRY')).toEqual([{ type: 'ENTRY', option: 'CE', close: 121, level: 120 }]);
   });
 
   it('takes one entry a day by default; a second entry only on the other side', () => {
-    const samples: [string, number][] = [...range, ['09:22', 115], ['09:25', 116], ['09:27', 117], ['09:30', 85], ['09:35', 80], ['09:40', 80]];
+    const samples: [string, number][] = [...range, ['09:21', 115], ['09:22', 117], ['09:30', 85], ['09:35', 80]];
     expect(run({ rangeMinutes: 5 }, samples).events.filter((e) => e.type === 'ENTRY')).toHaveLength(1);
     const two = run({ rangeMinutes: 5, maxEntries: 2 }, samples).events.filter((e) => e.type === 'ENTRY');
     expect(two.map((e) => (e as { option: string }).option)).toEqual(['CE', 'PE']);
   });
 
-  it('no entry from a candle that closes after the last entry time', () => {
-    const { events } = run({ rangeMinutes: 15, lastEntry: '09:45' }, [['09:15', 100], ['09:29', 101], ['09:50', 130], ['10:00', 131]]);
+  it('no entry after the last entry time', () => {
+    const { events } = run({ rangeMinutes: 15, lastEntry: '09:45' }, [['09:15', 100], ['09:29', 101], ['09:46', 130]]);
     expect(events.filter((e) => e.type === 'ENTRY')).toEqual([]);
   });
 
   it('continues from a saved state after a restart without repeating the entry', () => {
-    const first = run({ rangeMinutes: 5 }, [...range, ['09:22', 115], ['09:25', 116]]);
+    const first = run({ rangeMinutes: 5 }, [...range, ['09:22', 115]]);
     expect(first.s.entries).toBe(1);
     const after = run({ rangeMinutes: 5 }, [['09:31', 120], ['09:36', 121]], JSON.parse(JSON.stringify(first.s)));
     expect(after.events).toEqual([]);
@@ -89,6 +90,8 @@ describe('ORB settings and order', () => {
     expect(() => normalizeOrb({ rangeMinutes: 7 })).toThrow(AutomationError);
     expect(() => normalizeOrb({ stoploss: 100, stoplossUnit: 'PCT' })).toThrow(/below 100/);
     expect(() => normalizeAutomation({ orb: { exitTime: '10:30', lastEntry: '11:00' } })).toThrow(/after the last entry/);
+    expect(() => normalizeOrb({ rangeMinutes: 15, lastEntry: '09:30' })).toThrow(/after the range ends/);
+    expect(normalizeOrb({ rangeMinutes: 15, lastEntry: '09:31' }).lastEntry).toBe('09:31');
   });
 
   it('buys ATM with stop loss and target = stop loss × ratio', () => {

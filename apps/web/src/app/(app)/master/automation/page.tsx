@@ -592,7 +592,6 @@ function OrbCard({ form, set, saveBar, today }: { form: AutomationSettings; set:
   const setO = (patch: Partial<OrbSettings>) => set((f) => ({ ...f, orb: { ...f.orb, ...patch } }));
   const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
   const rangeEnd = hhmm(9 * 60 + 15 + o.rangeMinutes);
-  const firstClose = hhmm(9 * 60 + 15 + o.rangeMinutes * 2);
   const target = o.stoploss && o.targetRatio ? Math.round(o.stoploss * o.targetRatio * 100) / 100 : null;
   const unit = o.stoplossUnit === 'PCT' ? '%' : ' pts';
 
@@ -605,8 +604,9 @@ function OrbCard({ form, set, saveBar, today }: { form: AutomationSettings; set:
             <Badge variant={o.enabled ? 'success' : 'secondary'}>{o.enabled ? 'Running' : 'Paused'}</Badge>
           </div>
           <p className="mt-0.5 max-w-3xl text-xs text-muted-foreground">
-            Range = {o.underlying}&apos;s high and low from 09:15 to {rangeEnd}. After that, when a {o.rangeMinutes} minute candle closes above the high, the ATM
-            CALL is bought; when one closes below the low, the ATM PUT is bought. Prices are from the nearest {o.underlying} future.
+            Range = {o.underlying}&apos;s high and low from 09:15 to {rangeEnd}. After that, the moment price goes above the high the ATM CALL is
+            bought, and the moment it goes below the low the ATM PUT is bought, without waiting for a candle to close. Prices are from the nearest{' '}
+            {o.underlying} future.
           </p>
         </div>
         <Toggle checked={o.enabled} onChange={(v) => setO({ enabled: v })} label={o.enabled ? 'On' : 'Off'} />
@@ -645,7 +645,7 @@ function OrbCard({ form, set, saveBar, today }: { form: AutomationSettings; set:
               ))}
             </datalist>
           </Field>
-          <Field label="Range / candle" hint={`Range 09:15 to ${rangeEnd}; first breakout candle closes at ${firstClose}`}>
+          <Field label="Range / candle" hint={`Range 09:15 to ${rangeEnd}; trades from ${rangeEnd} on the first break`}>
             <Select value={o.rangeMinutes} onChange={(e) => setO({ rangeMinutes: Number(e.target.value) as OrbSettings['rangeMinutes'] })}>
               {[5, 10, 15, 30].map((m) => (
                 <option key={m} value={m}>

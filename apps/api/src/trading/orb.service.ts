@@ -19,8 +19,8 @@ const TTL = 36 * 3600;
 const BSE = new Set(['SENSEX', 'BANKEX', 'SENSEX50']);
 
 /**
- * Runs ORB for every active strategy that has it on: builds the opening range and the breakout candles from the
- * underlying's nearest-future price (sampled every second), buys the ATM CALL / PUT on a breakout close and squares
+ * Runs ORB for every active strategy that has it on: builds the opening range from the
+ * underlying's nearest-future price (sampled every second), buys the ATM CALL / PUT the moment price breaks it and squares
  * off at the exit time. Day state lives in Redis, so a restart neither loses the range nor repeats an entry.
  */
 @Injectable()
@@ -140,7 +140,7 @@ export class OrbService implements OnApplicationBootstrap, OnModuleDestroy {
         // A breakout to the other side closes the ORB's open position first.
         if (next.entries > 1) await this.exitOwn(st, key, label, 'Reversal');
         const tradeIds: string[] = [];
-        const sym = await this.hooks.runAlert(st, orbAlert(cfg, e.option, e.close), `${label} (close ${e.close} ${e.option === 'CE' ? '>' : '<'} ${e.level})`, { tradeIds });
+        const sym = await this.hooks.runAlert(st, orbAlert(cfg, e.option, e.close), `${label} (price ${e.close} ${e.option === 'CE' ? 'above high' : 'below low'} ${e.level})`, { tradeIds });
         if (sym) await this.redis.multi().sadd(`${key}:syms`, sym).expire(`${key}:syms`, TTL).exec();
       }
     }
