@@ -73,6 +73,8 @@ ENV
   echo "  Created with new secrets and an empty database."
 fi
 chmod 600 "$ENV_FILE"
+# The main domain can change between deploys: every app URL (web, API, webhooks, broker redirects) follows it.
+sed -i "s/^PUBLIC_DOMAIN=.*/PUBLIC_DOMAIN=$DOMAIN/" "$ENV_FILE"
 # Mail settings handed over by deploy.sh: replace the same keys in the .env, then remove the hand-over file.
 MAIL_ENV="$(getent passwd ubuntu | cut -d: -f6)/ctp-mail.env"
 if [ -f "$MAIL_ENV" ]; then
@@ -116,10 +118,16 @@ systemctl enable ctp >/dev/null
 systemctl restart ctp
 
 echo "→ Caddy (HTTPS for $DOMAIN)"
-cat > /etc/caddy/Caddyfile <<CADDY
+: > /etc/caddy/Caddyfile
+# www.<domain> redirect only when that name exists in DNS (a subdomain like trade.example.com has none).
+if getent ahosts "www.$DOMAIN" >/dev/null 2>&1; then
+  cat >> /etc/caddy/Caddyfile <<CADDY
 www.$DOMAIN {
 	redir https://$DOMAIN{uri} permanent
 }
+CADDY
+fi
+cat >> /etc/caddy/Caddyfile <<CADDY
 $DOMAIN {
 	encode gzip
 	reverse_proxy 127.0.0.1:3000 {

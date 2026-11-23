@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Run on your Mac. Copies the platform to the Oracle VM (the one Chesi runs on) and starts or updates it.
 #
-#   deploy/oracle/deploy.sh ubuntu@<vm-ip> ~/Downloads/ssh-key.key cryptocraft.co.in
+#   deploy/oracle/deploy.sh ubuntu@<vm-ip> ~/Downloads/ssh-key.key trade.sanchaytechnologies.com
 set -euo pipefail
 
 TARGET="${1:?Usage: $0 ubuntu@<vm-ip> <ssh-key-file> <domain>}"
 KEY="${2:?Give the SSH private key file of the VM}"
-DOMAIN="${3:?Give the domain, e.g. cryptocraft.co.in}"
+DOMAIN="${3:?Give the domain, e.g. trade.sanchaytechnologies.com}"
 EXTRA_DOMAINS="${4:-}"
 SITE_ORIGINS="${5:-}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

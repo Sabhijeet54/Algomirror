@@ -1,4 +1,4 @@
-# Push to main → unit tests + typecheck → deploy to the Oracle VM (cryptocraft.co.in).
+# Push to main → unit tests + typecheck → deploy to the Oracle VM (trade.sanchaytechnologies.com).
 # One-time setup: repo Settings → Secrets and variables → Actions → New repository secret
 #   ORACLE_SSH_KEY = the full contents of the VM's SSH private key file.
 name: Deploy to Oracle
@@ -33,9 +33,11 @@ jobs:
     timeout-minutes: 40
     env:
       TARGET: ubuntu@137.23.35.238
-      DOMAIN: cryptocraft.co.in
-      # More domains for the same app (A record → this VM), comma separated.
-      EXTRA_DOMAINS: trade.sanchaytechnologies.com
+      # Main address: web, API, webhook URLs and broker redirects are all built from it.
+      DOMAIN: trade.sanchaytechnologies.com
+      # More domains for the same app (A record → this VM), comma separated. cryptocraft.co.in is kept so its old
+      # links and webhook URLs work again if that domain is renewed.
+      EXTRA_DOMAINS: cryptocraft.co.in
       # Public websites whose enquiry form posts to this API (CORS), comma separated.
       SITE_ORIGINS: https://sanchaytechnologies.com,https://www.sanchaytechnologies.com
     steps:
