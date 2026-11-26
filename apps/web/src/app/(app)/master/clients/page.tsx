@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { brokerLabel, formatDateTime } from '@/lib/format';
 import { useMe } from '@/lib/queries';
@@ -24,6 +25,8 @@ const LIC_TONE = { NONE: 'text-muted-foreground', ACTIVE: 'text-success', EXPIRI
 export default function MasterClientsPage() {
   const q = useMasterClients();
   const [search, setSearch] = useState('');
+  /** Connected-broker filter: a broker name, NONE (no broker connected) or all. */
+  const [broker, setBroker] = useState('all');
   const [lic, setLic] = useState<MasterClientRow | null>(null);
   const [strat, setStrat] = useState<MasterClientRow | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -32,7 +35,9 @@ export default function MasterClientsPage() {
   // A master's sub-admin cannot delete clients.
   const canDelete = !(me.data as { isSubAdmin?: boolean } | undefined)?.isSubAdmin;
   const quota = useMasterLicenceQuota();
+  const brokers = [...new Set((q.data ?? []).flatMap((c) => (c.broker ? [c.broker.broker] : [])))].sort();
   const rows = (q.data ?? []).filter((c) => {
+    if (broker === 'NONE' ? !!c.broker : broker !== 'all' && c.broker?.broker !== broker) return false;
     const t = search.trim().toLowerCase();
     return !t || c.name.toLowerCase().includes(t) || c.email.toLowerCase().includes(t) || (c.mobile ?? '').includes(t);
   });
@@ -59,9 +64,20 @@ export default function MasterClientsPage() {
       />
       <Card>
         <CardContent className="grid gap-4 pt-6">
-          <div className="relative w-full max-w-xs">
-            <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input className="pl-8" placeholder="Name, email or mobile" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative w-full max-w-xs">
+              <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input className="pl-8" placeholder="Name, email or mobile" value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+            <Select className="w-44" value={broker} onChange={(e) => setBroker(e.target.value)} aria-label="Connected broker">
+              <option value="all">All brokers</option>
+              {brokers.map((b) => (
+                <option key={b} value={b}>
+                  {brokerLabel(b)}
+                </option>
+              ))}
+              <option value="NONE">Not connected</option>
+            </Select>
           </div>
           <div className="overflow-x-auto">
             <Table>
@@ -81,7 +97,7 @@ export default function MasterClientsPage() {
                 {rows.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
-                      {q.isLoading ? 'Loading…' : q.error ? q.error.message : 'No clients yet — press “Create client”.'}
+                      {q.isLoading ? 'Loading…' : q.error ? q.error.message : (q.data ?? []).length ? 'No clients match this filter.' : 'No clients yet — press “Create client”.'}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -109,16 +125,18 @@ export default function MasterClientsPage() {
                           <span className="text-muted-foreground">Not connected</span>
                         )}
                       </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col gap-1 text-xs">
-                          {c.subscriptions.map((s) => (
-                            <span key={s.followerId} className="flex items-center gap-1.5">
-                              <StatusBadge value={s.copyStatus} label={s.copyStatus === 'ON' ? 'ON' : s.copyStatus} />
-                              <span className="font-medium">{s.strategyName}</span>
-                              <span className="text-muted-foreground">{s.allocation}</span>
-                            </span>
-                          ))}
-                        </div>
+                      <TableCell className="whitespace-nowrap text-xs">
+                        {/* One line, however many strategies (names on hover; the full list is under Strategies / Details). */}
+                        {c.subscriptions.length ? (
+                          <span title={c.subscriptions.map((s) => `${s.strategyName} · ${s.copyStatus} · ${s.allocation}`).join('\n')}>
+                            <span className="font-medium">
+                              {c.subscriptions.length} strateg{c.subscriptions.length === 1 ? 'y' : 'ies'}
+                            </span>{' '}
+                            <span className="text-success">· {c.subscriptions.filter((s) => s.copyStatus === 'ON').length} ON</span>
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">None</span>
+                        )}
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-xs">
                         <div className={`font-medium ${LIC_TONE[c.licenceStatus]}`}>

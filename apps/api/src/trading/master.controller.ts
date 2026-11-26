@@ -551,9 +551,9 @@ export class MasterController {
   // ---------------------------------------------------------------- trades
 
   @Get('trades')
-  async trades(@CurrentUser() user: RequestUser, @Query('strategyId') strategyId?: string) {
+  async trades(@CurrentUser() user: RequestUser, @Query('strategyId') strategyId?: string, @Query('today') today?: string) {
     const rows = await this.prisma.masterTrade.findMany({
-      where: { masterUserId: user.id, ...(strategyId ? { strategyId } : {}) },
+      where: { masterUserId: user.id, ...(strategyId ? { strategyId } : {}), ...(today === '1' || today === 'true' ? { createdAt: { gte: startOfTradingDayIST() } } : {}) },
       include: { _count: { select: { copyOrders: true } }, copyOrders: { select: { status: true } } },
       orderBy: { createdAt: 'desc' },
       take: 100,

@@ -32,6 +32,16 @@ class AngelScripMasterStore {
   private byCanonical = new Map<string, AngelContract>();
   contracts: AngelContract[] = [];
 
+  /** Loaded for today (lookups will not wait on the ~38 MB download). */
+  ready(): boolean {
+    return this.day === istDay();
+  }
+
+  /** Loading right now (first lookup of the day waits for it). */
+  get busy(): boolean {
+    return !!this.loading;
+  }
+
   async ensure(): Promise<void> {
     if (this.day === istDay()) return;
     this.loading ??= this.load().finally(() => (this.loading = undefined));

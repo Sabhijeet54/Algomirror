@@ -115,10 +115,10 @@ describe('WebhookService', () => {
       })),
     };
     const fno = { chain: jest.fn(async () => ({ name: 'NIFTY', lotSize: 65, expiries: EXPIRIES })) };
-    const feed = { ensure: jest.fn() };
-    const prices = { get: jest.fn(() => 150) };
+    const feed = { ensure: jest.fn(), quote: jest.fn(async (): Promise<number | null> => null) };
+    const prices = { get: jest.fn((): number | null => 150) };
     const svc = new WebhookService(prisma as never, redis as never, orders as never, signals as never, fno as never, feed as never, prices as never, { API_PUBLIC_URL: 'https://x.in/api/' } as never);
-    return { svc, orders, signals, redis, counters };
+    return { svc, orders, signals, redis, counters, feed, prices };
   };
 
   it('places an ATM option trade with lots × lot size, SL / target from points', async () => {
@@ -174,6 +174,46 @@ describe('WebhookService', () => {
     const { svc, orders } = make();
     orders.place.mockRejectedValueOnce(new BadRequestException('Start (activate) the strategy before trading it.'));
     await expect(svc.handle(STRATEGY.webhookToken, { action: 'BUY', symbol: 'SBIN', qty: 1 })).rejects.toThrow(/activate/);
+  });
+
+  describe('live price at market open (fresh ATM contract, no tick yet)', () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+    const ALERT = { action: 'BUY', underlying: 'NIFTY', option: 'CE', strike: 'ATM', lots: 1, spot: 25212, targetPoints: 30, stoplossPoints: 15 };
+
+    it('falls back to a broker REST quote when the feed has no tick', async () => {
+      const { svc, orders, feed, prices } = make();
+      prices.get.mockReturnValue(null);
+      feed.quote.mockResolvedValueOnce(null).mockResolvedValueOnce(150);
+      const p = svc.handle(STRATEGY.webhookToken, ALERT);
+      await jest.advanceTimersByTimeAsync(10_000);
+      await expect(p).resolves.toMatchObject({ ok: true });
+      expect(feed.ensure).toHaveBeenCalledWith('NFO', 'NIFTY17NOV2625200CE');
+      expect(feed.quote).toHaveBeenCalledTimes(2);
+      expect(orders.place).toHaveBeenCalledWith('m1', STRATEGY, expect.objectContaining({ targetPrice: 180, stopLossPrice: 135 }), {});
+    });
+
+    it('uses the first socket tick without a REST call', async () => {
+      const { svc, orders, feed, prices } = make();
+      let calls = 0;
+      prices.get.mockImplementation(() => (++calls > 3 ? 150 : null));
+      const p = svc.handle(STRATEGY.webhookToken, ALERT);
+      await jest.advanceTimersByTimeAsync(5_000);
+      await p;
+      expect(feed.quote).not.toHaveBeenCalled();
+      expect(orders.place).toHaveBeenCalledWith('m1', STRATEGY, expect.objectContaining({ targetPrice: 180 }), {});
+    });
+
+    it('still explains the problem when neither the feed nor the broker has a price', async () => {
+      const { svc, orders, feed, prices } = make();
+      prices.get.mockReturnValue(null);
+      const p = svc.handle(STRATEGY.webhookToken, ALERT);
+      const done = expect(p).rejects.toThrow(/Live price not available/);
+      await jest.advanceTimersByTimeAsync(20_000);
+      await done;
+      expect(feed.quote).toHaveBeenCalledTimes(3);
+      expect(orders.place).not.toHaveBeenCalled();
+    });
   });
 
   it('builds the public URL', () => {

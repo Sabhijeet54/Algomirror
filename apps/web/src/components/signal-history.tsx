@@ -25,6 +25,17 @@ const fmtTime = (iso: string) => new Intl.DateTimeFormat('en-IN', { hour: '2-dig
 
 type Row = AdminSignalRow & { liveLtp: number | null; pnl: number };
 
+const DERIVATIVE_EXCHANGES = new Set(['NFO', 'BFO', 'MCX', 'CDS', 'BCD']);
+/** Index / stock a trade is on: NIFTY17NOV2625200CE → NIFTY, BANKNIFTY25NOVFUT → BANKNIFTY, RELIANCE-EQ → RELIANCE. */
+export function underlyingOf(exchange: string, symbol: string): string {
+  const sym = symbol.toUpperCase();
+  if (DERIVATIVE_EXCHANGES.has(exchange.toUpperCase())) {
+    const m = /^([A-Z&-]+?)\d{2}[A-Z]{3}/.exec(sym);
+    if (m) return m[1]!;
+  }
+  return sym.replace(/-(EQ|BE)$/, '');
+}
+
 /** Excel opens UTF-8 CSV with a BOM directly (₹ and names stay intact). */
 function exportCsv(rows: Row[], multiplier: number) {
   const head = ['Strategy', 'Master', 'Script', 'Exchange', 'Execution date', 'Side', 'Quantity', 'Entry', 'Entry time', 'Exit', 'Exit time', 'Exit reason', 'Target', 'Stop loss', 'Status', 'LTP', 'PNL'];
@@ -176,10 +187,12 @@ function PerformanceCard({ rows, mult }: { rows: Row[]; mult: number }) {
 }
 
 export function SignalHistory({ scope }: { scope: 'admin' | 'master' }) {
-  const defaults = { from: istDate(-7), to: istDate(), strategyIds: [] as string[], status: 'all' as 'all' | 'open' | 'closed' };
+  const defaults = { from: istDate(), to: istDate(), strategyIds: [] as string[], status: 'all' as 'all' | 'open' | 'closed' };
   const [draft, setDraft] = useState(defaults);
   const [applied, setApplied] = useState(defaults);
   const [multiplier, setMultiplier] = useState('1');
+  /** Index / stock filter, applied on the loaded trades (options come from what was actually traded). */
+  const [underlying, setUnderlying] = useState('all');
   const [tpslRow, setTpslRow] = useState<SignalRow | null>(null);
   const [editRow, setEditRow] = useState<Row | null>(null);
   const [deleteRow, setDeleteRow] = useState<Row | null>(null);
@@ -195,7 +208,9 @@ export function SignalHistory({ scope }: { scope: 'admin' | 'master' }) {
   const ltps = useLtps(openKeys).data;
   const mult = Number(multiplier) > 0 ? Number(multiplier) : 1;
 
-  const view: Row[] = rows.map((r) => {
+  const underlyings = useMemo(() => [...new Set(rows.map((r) => underlyingOf(r.exchange, r.symbol)))].sort(), [rows]);
+  const shown = underlying === 'all' ? rows : rows.filter((r) => underlyingOf(r.exchange, r.symbol) === underlying);
+  const view: Row[] = shown.map((r) => {
     const ltp = r.status === 'OPEN' ? (ltps?.[`${r.exchange}:${r.symbol}`.toUpperCase()]?.ltp ?? r.ltp) : null;
     const dir = r.side === 'BUY' ? 1 : -1;
     const unrealized = r.status === 'OPEN' && ltp != null && r.entryPrice != null ? r.openQuantity * (ltp - r.entryPrice) * dir : 0;
@@ -242,6 +257,18 @@ export function SignalHistory({ scope }: { scope: 'admin' | 'master' }) {
                 <option value="closed">Closed</option>
               </Select>
             </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="sig-underlying">Index / stock</Label>
+              <Select id="sig-underlying" value={underlying} onChange={(e) => setUnderlying(e.target.value)} className="w-36">
+                <option value="all">All</option>
+                {underlying !== 'all' && !underlyings.includes(underlying) ? <option value={underlying}>{underlying}</option> : null}
+                {underlyings.map((u) => (
+                  <option key={u} value={u}>
+                    {u}
+                  </option>
+                ))}
+              </Select>
+            </div>
             <details className="relative">
               <summary className="flex h-9 cursor-pointer list-none items-center rounded-md border px-3 text-sm">
                 {draft.strategyIds.length ? `${draft.strategyIds.length} strateg${draft.strategyIds.length > 1 ? 'ies' : 'y'}` : 'All strategies'} ▾
@@ -257,7 +284,7 @@ export function SignalHistory({ scope }: { scope: 'admin' | 'master' }) {
               </div>
             </details>
             <Button onClick={() => setApplied(draft)}>Filter</Button>
-            <Button variant="outline" onClick={() => (setDraft(defaults), setApplied(defaults))}>
+            <Button variant="outline" onClick={() => (setDraft(defaults), setApplied(defaults), setUnderlying('all'))}>
               <RotateCcw /> Reset
             </Button>
             <Button variant="outline" onClick={() => void q.refetch()} disabled={q.isFetching}>

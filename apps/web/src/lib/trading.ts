@@ -115,7 +115,9 @@ export const useMasterLive = () =>
     queryFn: () => api<{ paperMode: boolean; accounts: BrokerAccountView[]; live: LiveAccount[]; paperPositions: PaperPosition[] }>('/master/live'),
     refetchInterval: LIVE_MS,
   });
-export const useMasterTrades = () => useQuery({ queryKey: ['master', 'trades'], queryFn: () => api<MasterTradeRow[]>('/master/trades'), refetchInterval: LIVE_MS });
+/** Order log: today's orders only (IST trading day). */
+export const useMasterTrades = () =>
+  useQuery({ queryKey: ['master', 'trades', 'today'], queryFn: () => api<MasterTradeRow[]>('/master/trades?today=1'), refetchInterval: LIVE_MS });
 export const useMasterTrade = (id: string | null) =>
   useQuery({ queryKey: ['master', 'trade', id], queryFn: () => api<MasterTradeDetail>(`/master/trades/${id}`), enabled: !!id, refetchInterval: LIVE_MS });
 export const useStrategyFollowers = (id: string | null) =>

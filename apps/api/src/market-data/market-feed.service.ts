@@ -12,6 +12,7 @@ import { NotifyService } from '../realtime/notify.service';
 import { RealtimeService } from '../realtime/realtime.gateway';
 import { AngelOneAdapter } from '../trading/angel.adapter';
 import { AngelFeed, ANGEL_EXCHANGE_TYPE } from './angel-feed';
+import { angelScripMaster } from './angel-scrip-master';
 import { InstrumentsService } from './instruments.service';
 import { KiteTicker } from './kite-ticker';
 import { instrumentKey, PriceCacheService } from './price-cache.service';
@@ -19,6 +20,16 @@ import { instrumentKey, PriceCacheService } from './price-cache.service';
 const SUBS_KEY = 'ctp:feed:subs';
 const PREFERRED_KEY = 'ctp:feed:broker';
 const BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 30_000];
+const DERIVATIVE = new Set(['NFO', 'BFO', 'MCX', 'CDS', 'BCD']);
+const SCRIP_WARM_RETRY_MS = 5 * 60_000;
+
+/** IST minutes since midnight on a weekday, else null. */
+function istWeekdayMinutes(now = new Date()): number | null {
+  const ist = new Date(now.getTime() + 330 * 60_000);
+  const day = ist.getUTCDay();
+  if (day === 0 || day === 6) return null;
+  return ist.getUTCHours() * 60 + ist.getUTCMinutes();
+}
 
 /** NSE/BSE/NFO cash + F&O hours (IST, weekdays) — used only for stale-feed detection. */
 export function isMarketOpen(now = new Date()): boolean {
@@ -63,6 +74,7 @@ export class MarketFeedService implements OnApplicationBootstrap, OnModuleDestro
   /** feed token -> instrument key */
   private readonly tokenToKey = new Map<string, string>();
   private readonly subscribed = new Set<string>();
+  private scripWarmAt = 0;
 
   constructor(
     @Inject(PRISMA) private readonly prisma: PrismaClient,
@@ -142,9 +154,13 @@ export class MarketFeedService implements OnApplicationBootstrap, OnModuleDestro
     if (keep.length) await this.redis.sadd(SUBS_KEY, ...keep);
   }
 
-  /** Remember a key that did not resolve; unknown symbols also leave the persistent list. */
-  private markBad(k: string, err?: string): void {
-    const transient = !!err && /rate limit|access rate|timeout|timed out|network|ECONN|socket/i.test(err);
+  /**
+   * Remember a key that did not resolve; unknown symbols also leave the persistent list. A derivative that failed
+   * while Angel's scrip master was not loaded yet is only "not found" because of that, so it is retried in a minute
+   * (it used to be blocked for 30 minutes, which failed every 9:15 / 9:20 / 9:26 automation entry on that contract).
+   */
+  private markBad(k: string, err?: string, forceTransient = false): void {
+    const transient = forceTransient || (!!err && /rate limit|access rate|timeout|timed out|network|ECONN|socket/i.test(err));
     this.badKeys.set(k, Date.now() + (transient ? 60_000 : 30 * 60_000));
     if (!transient) void this.redis.srem(SUBS_KEY, k).catch(() => undefined);
     if (this.badKeys.size > 5_000) this.badKeys.clear();
@@ -162,6 +178,18 @@ export class MarketFeedService implements OnApplicationBootstrap, OnModuleDestro
         if (this.kite) this.kite.unsubscribe([Number(tok.split(':')[1])]);
       }
     }
+  }
+
+  /**
+   * One-off REST LTP from the feed's data account (Angel getLtpData) for a contract the socket has no tick for
+   * yet — e.g. today's ATM option the moment a 9:15 automation picks it. Not written to the tick cache, so a
+   * contract that never gets socket ticks does not keep a frozen price there.
+   */
+  async quote(exchange: Exchange, symbol: string): Promise<number | null> {
+    const adapter = this.angelAdapter;
+    if (!adapter) return null;
+    const p = await adapter.ltp(exchange, symbol).catch(() => null);
+    return p != null && Number.isFinite(p) && p > 0 ? p : null;
   }
 
   /** Fire-and-forget helper for the copy engine: make sure a traded symbol gets live ticks. */
@@ -240,6 +268,7 @@ export class MarketFeedService implements OnApplicationBootstrap, OnModuleDestro
           if (key) this.prices.set(key, ltp);
         });
         f.connect();
+        this.warmScripMaster(true);
       }
       const saved = await this.redis.smembers(SUBS_KEY);
       await this.subscribeLive(saved);
@@ -334,11 +363,12 @@ export class MarketFeedService implements OnApplicationBootstrap, OnModuleDestro
           ok.push(k);
         } catch (err) {
           const msg = (err as Error).message;
-          if (!this.missingLogged.has(k)) {
+          const scripNotReady = DERIVATIVE.has(ex!) && !angelScripMaster.ready();
+          if (!this.missingLogged.has(k) || scripNotReady) {
             this.missingLogged.add(k);
-            this.logger.warn(`Angel subscribe ${k} failed: ${msg}`);
+            this.logger.warn(`Angel subscribe ${k} failed${scripNotReady ? ' (scrip master not loaded)' : ''}: ${msg}`);
           }
-          this.markBad(k, msg);
+          this.markBad(k, msg, scripNotReady);
         }
       }
     }
@@ -372,8 +402,22 @@ export class MarketFeedService implements OnApplicationBootstrap, OnModuleDestro
     }, delay);
   }
 
+  /**
+   * Loads Angel's daily scrip master before the market opens (from 08:00 IST), so the first F&O lookup of the
+   * day — usually a 9:15 automation entry — does not wait on the 38 MB download. Retries every 5 minutes on failure.
+   */
+  private warmScripMaster(force = false): void {
+    if (!this.angel || angelScripMaster.ready() || angelScripMaster.busy) return;
+    const mins = istWeekdayMinutes();
+    if (!force && (mins == null || mins < 8 * 60)) return;
+    if (Date.now() - this.scripWarmAt < SCRIP_WARM_RETRY_MS) return;
+    this.scripWarmAt = Date.now();
+    void angelScripMaster.ensure().catch(() => undefined);
+  }
+
   /** Watchdog: stale-feed detection, auto-restart, periodic status broadcast. */
   private check(): void {
+    this.warmScripMaster();
     // Dead socket (no frames at all — Kite heartbeats every second, Angel pongs every 25 s).
     if (this.state === 'LIVE' && Date.now() - this.lastMessageAt > 90_000) {
       this.logger.warn('Feed socket silent — restarting');

@@ -312,7 +312,7 @@ export function TradesCard() {
     <Card>
       <CardHeader>
         <CardTitle>Order log</CardTitle>
-        <CardDescription>Every entry and exit (placed here, auto TP/SL, or detected in your broker app) and how it was placed for each client.</CardDescription>
+        <CardDescription>Today&apos;s entries and exits (placed here, auto TP/SL, or detected in your broker app) and how each was placed for every client. Older orders are in Trade history.</CardDescription>
       </CardHeader>
       <CardContent className="overflow-x-auto">
         <Table>
@@ -329,7 +329,7 @@ export function TradesCard() {
             {(q.data ?? []).length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="py-6 text-center text-sm text-muted-foreground">
-                  {q.isLoading ? 'Loading…' : 'No trades yet'}
+                  {q.isLoading ? 'Loading…' : 'No orders today'}
                 </TableCell>
               </TableRow>
             ) : (

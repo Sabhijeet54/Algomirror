@@ -27,7 +27,10 @@ import {
 
 const LOG_KEY = (strategyId: string) => `ctp:webhook:log:${strategyId}`;
 const RATE_PER_MIN = 30;
+/** First wait for a socket tick, then shorter waits between REST quote attempts. */
 const PRICE_WAIT_MS = 3_000;
+const PRICE_RETRY_WAIT_MS = 1_000;
+const PRICE_TRIES = 3;
 
 export interface WebhookLogEntry {
   at: string;
@@ -304,13 +307,30 @@ export class WebhookService {
     return (await this.livePrice(ex, derivativeSymbol(u, near.date, 'FUT', null))) ?? undefined;
   }
 
-  /** Live price, subscribing the instrument and waiting briefly for its first tick. */
+  /**
+   * Live price: the tick cache, else subscribe the contract and wait briefly for its first tick, else ask the
+   * broker over REST — a few tries. Today's ATM option at 9:15 is a brand-new contract with no tick yet (and
+   * on the first lookup of the day Angel's scrip master is still downloading), so the cache alone was empty.
+   */
   private async livePrice(exchange: string, symbol: string): Promise<number | null> {
     const key = instrumentKey(exchange, symbol);
-    let p = this.prices.get(key);
-    if (p != null) return p;
+    const cached = this.prices.get(key);
+    if (cached != null) return cached;
     this.feed.ensure(exchange as Exchange, symbol);
-    const until = Date.now() + PRICE_WAIT_MS;
+    for (let i = 0; i < PRICE_TRIES; i++) {
+      const tick = await this.waitTick(key, i === 0 ? PRICE_WAIT_MS : PRICE_RETRY_WAIT_MS);
+      if (tick != null) return tick;
+      const quoted = await this.feed.quote(exchange as Exchange, symbol);
+      if (quoted != null) return quoted;
+      this.feed.ensure(exchange as Exchange, symbol);
+    }
+    this.logger.warn(`No live price for ${key} after ${PRICE_TRIES} tries (feed ticks + REST quote)`);
+    return null;
+  }
+
+  private async waitTick(key: string, ms: number): Promise<number | null> {
+    const until = Date.now() + ms;
+    let p = this.prices.get(key);
     while (p == null && Date.now() < until) {
       await new Promise((r) => setTimeout(r, 200));
       p = this.prices.get(key);
